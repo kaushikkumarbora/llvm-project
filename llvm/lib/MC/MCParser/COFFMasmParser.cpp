@@ -21,6 +21,7 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbolCOFF.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/Support/SMLoc.h"
 #include <cassert>
@@ -52,6 +53,8 @@ class COFFMasmParser : public MCAsmParserExtension {
   bool ParseDirectiveSegment(StringRef, SMLoc);
   bool ParseDirectiveSegmentEnd(StringRef, SMLoc);
   bool ParseDirectiveIncludelib(StringRef, SMLoc);
+
+  bool ParseDirectiveAlias(StringRef, SMLoc);
 
   bool ParseSEHDirectiveAllocStack(StringRef, SMLoc);
   bool ParseSEHDirectiveEndProlog(StringRef, SMLoc);
@@ -94,7 +97,6 @@ class COFFMasmParser : public MCAsmParserExtension {
     // align
     // even
     // mmword
-    // real10
     // tbyte
     // xmmword
     // ymmword
@@ -116,15 +118,10 @@ class COFFMasmParser : public MCAsmParserExtension {
     addDirectiveHandler<&COFFMasmParser::IgnoreDirective>("title");
 
     // Macro directives
-    // endm
-    // exitm
     // goto
-    // local
-    // macro
-    // purge
 
     // Miscellaneous directives
-    // alias
+    addDirectiveHandler<&COFFMasmParser::ParseDirectiveAlias>("alias");
     // assume
     // .fpo
     addDirectiveHandler<&COFFMasmParser::ParseDirectiveIncludelib>(
@@ -132,7 +129,6 @@ class COFFMasmParser : public MCAsmParserExtension {
     // option
     // popcontext
     // pushcontext
-    // .radix
     // .safeseh
 
     // Procedure directives
@@ -154,13 +150,6 @@ class COFFMasmParser : public MCAsmParserExtension {
     addDirectiveHandler<&COFFMasmParser::IgnoreDirective>(".k3d");
     addDirectiveHandler<&COFFMasmParser::IgnoreDirective>(".mmx");
     addDirectiveHandler<&COFFMasmParser::IgnoreDirective>(".xmm");
-
-    // Repeat blocks directives
-    // for
-    // forc
-    // goto
-    // repeat
-    // while
 
     // Scope directives
     // comm
@@ -344,13 +333,11 @@ bool COFFMasmParser::ParseDirectiveProc(StringRef Directive, SMLoc Loc) {
       nextLoc = getTok().getLoc();
     }
   }
-  MCSymbol *Sym = getContext().getOrCreateSymbol(Label);
+  MCSymbolCOFF *Sym = cast<MCSymbolCOFF>(getContext().getOrCreateSymbol(Label));
 
-  // Define symbol as simple function
-  getStreamer().BeginCOFFSymbolDef(Sym);
-  getStreamer().EmitCOFFSymbolStorageClass(2);
-  getStreamer().EmitCOFFSymbolType(0x20);
-  getStreamer().EndCOFFSymbolDef();
+  // Define symbol as simple external function
+  Sym->setExternal(true);
+  Sym->setType(COFF::IMAGE_SYM_DTYPE_FUNCTION << COFF::SCT_COMPLEX_TYPE_SHIFT);
 
   bool Framed = false;
   if (getLexer().is(AsmToken::Identifier) &&
@@ -382,6 +369,25 @@ bool COFFMasmParser::ParseDirectiveEndProc(StringRef Directive, SMLoc Loc) {
   }
   CurrentProcedure = "";
   CurrentProcedureFramed = false;
+  return false;
+}
+
+bool COFFMasmParser::ParseDirectiveAlias(StringRef Directive, SMLoc Loc) {
+  std::string AliasName, ActualName;
+  if (getTok().isNot(AsmToken::Less) ||
+      getParser().parseAngleBracketString(AliasName))
+    return Error(getTok().getLoc(), "expected <aliasName>");
+  if (getParser().parseToken(AsmToken::Equal))
+    return addErrorSuffix(" in " + Directive + " directive");
+  if (getTok().isNot(AsmToken::Less) ||
+      getParser().parseAngleBracketString(ActualName))
+    return Error(getTok().getLoc(), "expected <actualName>");
+
+  MCSymbol *Alias = getContext().getOrCreateSymbol(AliasName);
+  MCSymbol *Actual = getContext().getOrCreateSymbol(ActualName);
+
+  getStreamer().emitWeakReference(Alias, Actual);
+
   return false;
 }
 

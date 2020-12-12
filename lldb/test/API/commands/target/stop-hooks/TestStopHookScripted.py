@@ -7,7 +7,7 @@ Test stop hook functionality
 import lldb
 import lldbsuite.test.lldbutil as lldbutil
 from lldbsuite.test.lldbtest import *
-
+from lldbsuite.test.decorators import *
 
 class TestStopHooks(TestBase):
 
@@ -25,27 +25,45 @@ class TestStopHooks(TestBase):
         full_path = os.path.join(self.getSourceDir(), "main.c")
         self.main_start_line = line_number(full_path, "main()")
         
-    def not_test_stop_hooks_scripted(self):
+    def test_bad_handler(self):
+        """Test that we give a good error message when the handler is bad"""
+        self.script_setup()
+        result = lldb.SBCommandReturnObject()
+
+        # First try the wrong number of args handler:
+        command = "target stop-hook add -P stop_hook.bad_handle_stop"
+        self.interp.HandleCommand(command, result)
+        self.assertFalse(result.Succeeded(), "Set the target stop hook")
+        self.assertIn("Wrong number of args", result.GetError(), "Got the wrong number of args error")
+
+        # Next the no handler at all handler:
+        command = "target stop-hook add -P stop_hook.no_handle_stop"
+            
+        self.interp.HandleCommand(command, result)
+        self.assertFalse(result.Succeeded(), "Set the target stop hook")
+        self.assertIn('Class "stop_hook.no_handle_stop" is missing the required handle_stop callback', result.GetError(), "Got the right error")
+        
+    def test_stop_hooks_scripted(self):
         """Test that a scripted stop hook works with no specifiers"""
         self.stop_hooks_scripted(5)
 
-    def not_test_stop_hooks_scripted_right_func(self):
+    def test_stop_hooks_scripted_right_func(self):
         """Test that a scripted stop hook fires when there is a function match"""
         self.stop_hooks_scripted(5, "-n step_out_of_me")
     
-    def not_test_stop_hooks_scripted_wrong_func(self):
+    def test_stop_hooks_scripted_wrong_func(self):
         """Test that a scripted stop hook doesn't fire when the function does not match"""
         self.stop_hooks_scripted(0, "-n main")
     
-    def not_test_stop_hooks_scripted_right_lines(self):
+    def test_stop_hooks_scripted_right_lines(self):
         """Test that a scripted stop hook fires when there is a function match"""
         self.stop_hooks_scripted(5, "-f main.c -l 1 -e %d"%(self.main_start_line))
     
-    def not_test_stop_hooks_scripted_wrong_lines(self):
+    def test_stop_hooks_scripted_wrong_lines(self):
         """Test that a scripted stop hook doesn't fire when the function does not match"""
         self.stop_hooks_scripted(0, "-f main.c -l %d -e 100"%(self.main_start_line))
 
-    def not_test_stop_hooks_scripted_auto_continue(self):
+    def test_stop_hooks_scripted_auto_continue(self):
         """Test that the --auto-continue flag works"""
         self.do_test_auto_continue(False)
 
@@ -66,8 +84,6 @@ class TestStopHooks(TestBase):
         else:
           command = "target stop-hook add -G 1 -P stop_hook.stop_handler -k increment -v 5 -n step_out_of_me"
             
-        print("Running command: %s"%(command))
-        
         self.interp.HandleCommand(command, result)
         self.assertTrue(result.Succeeded, "Set the target stop hook")
 
@@ -115,7 +131,6 @@ class TestStopHooks(TestBase):
         command = "target stop-hook add -P stop_hook.stop_handler -k increment -v 5 "
         if specifier:
             command += specifier
-        print("Running command: %s"%(command))
         
         self.interp.HandleCommand(command, result)
         self.assertTrue(result.Succeeded, "Set the target stop hook")

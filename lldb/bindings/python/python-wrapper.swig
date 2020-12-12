@@ -518,15 +518,18 @@ LLDBSwigPythonCreateScriptedStopHook
         auto callback_func = result.ResolveName<PythonCallable>("handle_stop");
         if (callback_func.IsAllocated()) {
           if (auto args_info = callback_func.GetArgInfo()) {
-            if ((*args_info).max_positional_args < 2) {
+            size_t num_args = (*args_info).max_positional_args; 
+            if (num_args != 2) {
               error.SetErrorStringWithFormat("Wrong number of args for "
-              "handle_stop callback, should be 2 (excluding self), got: %d", 
-              (*args_info).max_positional_args);
+              "handle_stop callback, should be 2 (excluding self), got: %zu",
+              num_args);
+              Py_RETURN_NONE;
             } else
               return result.release();
           } else {
             error.SetErrorString("Couldn't get num arguments for handle_stop "
                                  "callback.");
+            Py_RETURN_NONE;
           }
           return result.release();
         }

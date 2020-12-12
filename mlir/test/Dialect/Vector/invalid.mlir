@@ -1328,3 +1328,45 @@ func @compress_dim_mask_mismatch(%base: memref<?xf32>, %mask: vector<17xi1>, %va
   // expected-error@+1 {{'vector.compressstore' op expected value dim to match mask dim}}
   vector.compressstore %base, %mask, %value : memref<?xf32>, vector<17xi1>, vector<16xf32>
 }
+
+// -----
+
+func @extract_map_rank(%v: vector<32xf32>, %id : index) {
+  // expected-error@+1 {{'vector.extract_map' op expected source and destination vectors of same rank}}
+  %0 = vector.extract_map %v[%id] : vector<32xf32> to vector<2x1xf32>
+}
+
+// -----
+
+func @extract_map_size(%v: vector<63xf32>, %id : index) {
+  // expected-error@+1 {{'vector.extract_map' op source vector dimensions must be a multiple of destination vector dimensions}}
+  %0 = vector.extract_map %v[%id] : vector<63xf32> to vector<2xf32>
+}
+
+// -----
+
+func @extract_map_id(%v: vector<2x32xf32>, %id : index) {
+  // expected-error@+1 {{'vector.extract_map' op expected number of ids must match the number of dimensions distributed}}
+  %0 = vector.extract_map %v[%id] : vector<2x32xf32> to vector<1x1xf32>
+}
+
+// -----
+
+func @insert_map_rank(%v: vector<2x1xf32>, %v1: vector<32xf32>, %id : index) {
+  // expected-error@+1 {{'vector.insert_map' op expected source and destination vectors of same rank}}
+  %0 = vector.insert_map %v, %v1[%id] : vector<2x1xf32> into vector<32xf32>
+}
+
+// -----
+
+func @insert_map_size(%v: vector<3xf32>, %v1: vector<64xf32>, %id : index) {
+  // expected-error@+1 {{'vector.insert_map' op destination vector size must be a multiple of source vector size}}
+  %0 = vector.insert_map %v, %v1[%id] : vector<3xf32> into vector<64xf32>
+}
+
+// -----
+
+func @insert_map_id(%v: vector<2x1xf32>, %v1: vector<4x32xf32>, %id : index) {
+  // expected-error@+1 {{'vector.insert_map' op expected number of ids must match the number of dimensions distributed}}
+  %0 = vector.insert_map %v, %v1[%id] : vector<2x1xf32> into vector<4x32xf32>
+}

@@ -48,7 +48,7 @@ Setting up the build
 First, configure and build LLVM as described in :doc:`GettingStarted`.
 
 Next, we will reuse an existing directory (creating a new directory involves
-modifying more ``CMakeLists.txt``s and ``LLVMBuild.txt``s than we want). For
+modifying more ``CMakeLists.txt``s than we want). For
 this example, we'll use ``llvm/lib/Transforms/HelloNew/HelloWorld.cpp``,
 which has already been created. If you'd like to create your own pass, add a
 new source file into ``llvm/lib/Transforms/HelloNew/CMakeLists.txt`` under
@@ -207,3 +207,32 @@ test at ``llvm/test/Transforms/HelloNew/helloworld.ll``. See
 
   $ ninja -C build check-llvm
   # runs our new test alongside all other llvm lit tests
+
+FAQs
+====
+
+Required passes
+---------------
+
+A pass that defines a static ``isRequired()`` method that returns true is a required pass. For example:
+
+.. code-block:: c++
+
+  class HelloWorldPass : public PassInfoMixin<HelloWorldPass> {
+  public:
+    PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+
+    static bool isRequired() { return true; }
+  };
+
+A required pass is a pass that may not be skipped. An example of a required
+pass is ``AlwaysInlinerPass``, which must always be run to preserve
+``alwaysinline`` semantics. Pass managers are required since they may contain
+other required passes.
+
+An example of how a pass can be skipped is the ``optnone`` function
+attribute, which specifies that optimizations should not be run on the
+function. Required passes will still be run on ``optnone`` functions.
+
+For more implementation details, see
+``PassInstrumentation::runBeforePass()``.

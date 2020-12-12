@@ -776,8 +776,7 @@ if(LLVM_USE_SANITIZER)
       endif()
     elseif (LLVM_USE_SANITIZER STREQUAL "Undefined")
       append_common_sanitizer_flags()
-      append("-fsanitize=undefined -fno-sanitize=vptr,function -fno-sanitize-recover=all"
-              CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+      append("${LLVM_UBSAN_FLAGS}" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
     elseif (LLVM_USE_SANITIZER STREQUAL "Thread")
       append_common_sanitizer_flags()
       append("-fsanitize=thread" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
@@ -786,8 +785,8 @@ if(LLVM_USE_SANITIZER)
     elseif (LLVM_USE_SANITIZER STREQUAL "Address;Undefined" OR
             LLVM_USE_SANITIZER STREQUAL "Undefined;Address")
       append_common_sanitizer_flags()
-      append("-fsanitize=address,undefined -fno-sanitize=vptr,function -fno-sanitize-recover=all"
-              CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+      append("-fsanitize=address" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+      append("${LLVM_UBSAN_FLAGS}" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
     elseif (LLVM_USE_SANITIZER STREQUAL "Leaks")
       append_common_sanitizer_flags()
       append("-fsanitize=leak" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
@@ -917,6 +916,15 @@ if (LLVM_BUILD_INSTRUMENTED)
         append("-fprofile-generate=\"${LLVM_PROFILE_DATA_DIR}\""
           CMAKE_EXE_LINKER_FLAGS
           CMAKE_SHARED_LINKER_FLAGS)
+    endif()
+    # Set this to avoid running out of the value profile node section
+    # under clang in dynamic linking mode.
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND
+        CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11 AND
+        LLVM_LINK_LLVM_DYLIB)
+      append("-Xclang -mllvm -Xclang -vp-counters-per-site=1.5"
+        CMAKE_CXX_FLAGS
+        CMAKE_C_FLAGS)
     endif()
   elseif(uppercase_LLVM_BUILD_INSTRUMENTED STREQUAL "CSIR")
     append("-fcs-profile-generate=\"${LLVM_CSPROFILE_DATA_DIR}\""

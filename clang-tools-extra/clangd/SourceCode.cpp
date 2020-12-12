@@ -445,9 +445,8 @@ llvm::Optional<SourceRange> toHalfOpenFileRange(const SourceManager &SM,
 
 llvm::StringRef toSourceCode(const SourceManager &SM, SourceRange R) {
   assert(isValidFileRange(SM, R));
-  bool Invalid = false;
-  auto *Buf = SM.getBuffer(SM.getFileID(R.getBegin()), &Invalid);
-  assert(!Invalid);
+  auto Buf = SM.getBufferOrNone(SM.getFileID(R.getBegin()));
+  assert(Buf);
 
   size_t BeginOffset = SM.getFileOffset(R.getBegin());
   size_t EndOffset = SM.getFileOffset(R.getEnd());
@@ -456,7 +455,7 @@ llvm::StringRef toSourceCode(const SourceManager &SM, SourceRange R) {
 
 llvm::Expected<SourceLocation> sourceLocationInMainFile(const SourceManager &SM,
                                                         Position P) {
-  llvm::StringRef Code = SM.getBuffer(SM.getMainFileID())->getBuffer();
+  llvm::StringRef Code = SM.getBufferOrFake(SM.getMainFileID()).getBuffer();
   auto Offset =
       positionToOffset(Code, P, /*AllowColumnBeyondLineLength=*/false);
   if (!Offset)
@@ -633,6 +632,12 @@ std::vector<Range> collectIdentifierRanges(llvm::StringRef Identifier,
   return Ranges;
 }
 
+bool isKeyword(llvm::StringRef NewName, const LangOptions &LangOpts) {
+  // Keywords are initialized in constructor.
+  clang::IdentifierTable KeywordsTable(LangOpts);
+  return KeywordsTable.find(NewName) != KeywordsTable.end();
+}
+
 namespace {
 struct NamespaceEvent {
   enum {
@@ -774,8 +779,8 @@ void parseNamespaceEvents(llvm::StringRef Code, const LangOptions &LangOpts,
 }
 
 // Returns the prefix namespaces of NS: {"" ... NS}.
-llvm::SmallVector<llvm::StringRef, 8> ancestorNamespaces(llvm::StringRef NS) {
-  llvm::SmallVector<llvm::StringRef, 8> Results;
+llvm::SmallVector<llvm::StringRef> ancestorNamespaces(llvm::StringRef NS) {
+  llvm::SmallVector<llvm::StringRef> Results;
   Results.push_back(NS.take_front(0));
   NS.split(Results, "::", /*MaxSplit=*/-1, /*KeepEmpty=*/false);
   for (llvm::StringRef &R : Results)

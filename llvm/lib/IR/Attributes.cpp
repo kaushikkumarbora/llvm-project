@@ -451,6 +451,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "immarg";
   if (hasAttribute(Attribute::NoUndef))
     return "noundef";
+  if (hasAttribute(Attribute::MustProgress))
+    return "mustprogress";
 
   const bool IsByVal = hasAttribute(Attribute::ByVal);
   if (IsByVal || hasAttribute(Attribute::StructRet)) {
@@ -1886,6 +1888,7 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
         .addAttribute(Attribute::NoAlias)
         .addAttribute(Attribute::NoCapture)
         .addAttribute(Attribute::NonNull)
+        .addAlignmentAttr(1)             // the int here is ignored
         .addDereferenceableAttr(1)       // the int here is ignored
         .addDereferenceableOrNullAttr(1) // the int here is ignored
         .addAttribute(Attribute::ReadNone)
@@ -1895,6 +1898,10 @@ AttrBuilder AttributeFuncs::typeIncompatible(Type *Ty) {
         .addByValAttr(Ty)
         .addStructRetAttr(Ty)
         .addByRefAttr(Ty);
+
+  // Some attributes can apply to all "values" but there are no `void` values.
+  if (Ty->isVoidTy())
+    Incompatible.addAttribute(Attribute::NoUndef);
 
   return Incompatible;
 }
@@ -1932,6 +1939,16 @@ static void setOR(Function &Caller, const Function &Callee) {
 /// If the inlined function had a higher stack protection level than the
 /// calling function, then bump up the caller's stack protection level.
 static void adjustCallerSSPLevel(Function &Caller, const Function &Callee) {
+#ifndef NDEBUG
+  if (!Callee.hasFnAttribute(Attribute::AlwaysInline)) {
+    assert(!(!Callee.hasStackProtectorFnAttr() &&
+             Caller.hasStackProtectorFnAttr()) &&
+           "stack protected caller but callee requested no stack protector");
+    assert(!(!Caller.hasStackProtectorFnAttr() &&
+             Callee.hasStackProtectorFnAttr()) &&
+           "stack protected callee but caller requested no stack protector");
+  }
+#endif
   // If upgrading the SSP attribute, clear out the old SSP Attributes first.
   // Having multiple SSP attributes doesn't actually hurt, but it adds useless
   // clutter to the IR.

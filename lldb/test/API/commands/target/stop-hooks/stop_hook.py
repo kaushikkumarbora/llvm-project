@@ -31,4 +31,19 @@ class stop_handler:
             stream.Print("Didn't get a valid value for g_var.")
         else:
             int_val = value.GetValueAsUnsigned()
+        stream.Print("Returning value: %d from handle_stop.\n"%(self.ret_val))
         return self.ret_val
+
+class bad_handle_stop:
+    def __init__(self, target, extra_args, dict):
+        print("I am okay")
+
+    def handle_stop(self):
+        print("I am bad")
+
+class no_handle_stop:
+    def __init__(self, target, extra_args, dict):
+        print("I am okay")
+
+
+    

@@ -334,6 +334,29 @@ func @memref_cast_folding(%arg0: memref<4 x f32>, %arg1: f32) -> (f32, f32) {
   return %1, %2 : f32, f32
 }
 
+// CHECK-LABEL: @fold_memref_cast_in_memref_cast
+// CHECK-SAME: (%[[ARG0:.*]]: memref<42x42xf64>)
+func @fold_memref_cast_in_memref_cast(%0: memref<42x42xf64>) {
+  // CHECK: %[[folded:.*]] = memref_cast %[[ARG0]] : memref<42x42xf64> to memref<?x?xf64>
+  %4 = memref_cast %0 : memref<42x42xf64> to memref<?x42xf64>
+  // CHECK-NOT: memref_cast
+  %5 = memref_cast %4 : memref<?x42xf64> to memref<?x?xf64>
+  // CHECK: "test.user"(%[[folded]])
+  "test.user"(%5) : (memref<?x?xf64>) -> ()
+  return
+}
+
+// CHECK-LABEL: @fold_memref_cast_chain
+// CHECK-SAME: (%[[ARG0:.*]]: memref<42x42xf64>)
+func @fold_memref_cast_chain(%0: memref<42x42xf64>) {
+  // CHECK-NOT: memref_cast
+  %4 = memref_cast %0 : memref<42x42xf64> to memref<?x42xf64>
+  %5 = memref_cast %4 : memref<?x42xf64> to memref<42x42xf64>
+  // CHECK: "test.user"(%[[ARG0]])
+  "test.user"(%5) : (memref<42x42xf64>) -> ()
+  return
+}
+
 // CHECK-LABEL: func @alloc_const_fold
 func @alloc_const_fold() -> memref<?xf32> {
   // CHECK-NEXT: %0 = alloc() : memref<4xf32>
@@ -949,6 +972,46 @@ func @tensor_divi_unsigned_by_one(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
 
 // -----
 
+// CHECK-LABEL: func @floordivi_signed_by_one
+// CHECK-SAME: %[[ARG:[a-zA-Z0-9]+]]
+func @floordivi_signed_by_one(%arg0: i32) -> (i32) {
+  %c1 = constant 1 : i32
+  %res = floordivi_signed %arg0, %c1 : i32
+  // CHECK: return %[[ARG]]
+  return %res : i32
+}
+
+// CHECK-LABEL: func @tensor_floordivi_signed_by_one
+// CHECK-SAME: %[[ARG:[a-zA-Z0-9]+]]
+func @tensor_floordivi_signed_by_one(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  %c1 = constant dense<1> : tensor<4x5xi32>
+  %res = floordivi_signed %arg0, %c1 : tensor<4x5xi32>
+  // CHECK: return %[[ARG]]
+  return %res : tensor<4x5xi32>
+}
+
+// -----
+
+// CHECK-LABEL: func @ceildivi_signed_by_one
+// CHECK-SAME: %[[ARG:[a-zA-Z0-9]+]]
+func @ceildivi_signed_by_one(%arg0: i32) -> (i32) {
+  %c1 = constant 1 : i32
+  %res = ceildivi_signed %arg0, %c1 : i32
+  // CHECK: return %[[ARG]]
+  return %res : i32
+}
+
+// CHECK-LABEL: func @tensor_ceildivi_signed_by_one
+// CHECK-SAME: %[[ARG:[a-zA-Z0-9]+]]
+func @tensor_ceildivi_signed_by_one(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  %c1 = constant dense<1> : tensor<4x5xi32>
+  %res = ceildivi_signed %arg0, %c1 : tensor<4x5xi32>
+  // CHECK: return %[[ARG]]
+  return %res : tensor<4x5xi32>
+}
+
+// -----
+
 // CHECK-LABEL: func @memref_cast_folding_subview
 func @memref_cast_folding_subview(%arg0: memref<4x5xf32>, %i: index) -> (memref<?x?xf32, offset:? , strides: [?, ?]>) {
   %0 = memref_cast %arg0 : memref<4x5xf32> to memref<?x?xf32>
@@ -977,21 +1040,21 @@ func @memref_cast_folding_subview_static(%V: memref<16x16xf32>, %a: index, %b: i
 
 // -----
 
-// CHECK-LABEL: func @extract_element_from_tensor_from_elements
-func @extract_element_from_tensor_from_elements(%element : index) -> index {
+// CHECK-LABEL: func @extract_from_tensor_from_elements
+func @extract_from_tensor_from_elements(%element : index) -> index {
   // CHECK-SAME: ([[ARG:%.*]]: index)
   %c0 = constant 0 : index
   %tensor = tensor_from_elements %element : tensor<1xindex>
-  %extracted_element = extract_element %tensor[%c0] : tensor<1xindex>
+  %extracted_element = tensor.extract %tensor[%c0] : tensor<1xindex>
   // CHECK: [[ARG]] : index
   return %extracted_element : index
 }
 
 // -----
 
-// CHECK-LABEL: func @extract_element_from_dynamic_tensor_from_elements
+// CHECK-LABEL: func @extract_from_dynamic_tensor_from_elements
 // CHECK-SAME: %[[IDX:.*]]: index, %[[TENSOR:.*]]: tensor<*xf32>
-func @extract_element_from_dynamic_tensor_from_elements(%idx: index, %tensor: tensor<*xf32>) -> index {
+func @extract_from_dynamic_tensor_from_elements(%idx: index, %tensor: tensor<*xf32>) -> index {
   %size = rank %tensor : tensor<*xf32>
   // CHECK-NEXT: %[[RES:.*]] = dim %[[TENSOR]], %[[IDX]]
   %0 = dynamic_tensor_from_elements %size {
@@ -999,16 +1062,16 @@ func @extract_element_from_dynamic_tensor_from_elements(%idx: index, %tensor: te
     %1 = dim %tensor, %arg0 : tensor<*xf32>
     yield %1 : index
   } : tensor<?xindex>
-  %1 = extract_element %0[%idx] : tensor<?xindex>
+  %1 = tensor.extract %0[%idx] : tensor<?xindex>
   // CHECK-NEXT: return %[[RES]]
   return %1 : index
 }
 
 // -----
 
-// CHECK-LABEL: func @extract_element_from_dynamic_tensor_from_elements_2d
+// CHECK-LABEL: func @extract_from_dynamic_tensor_from_elements_2d
 // CHECK-SAME: %[[IDX0:.*]]: index, %[[IDX1:.*]]: index, %[[TENSOR:.*]]: tensor<*xf32>
-func @extract_element_from_dynamic_tensor_from_elements_2d(%idx0: index, %idx1: index, %tensor: tensor<*xf32>) -> index {
+func @extract_from_dynamic_tensor_from_elements_2d(%idx0: index, %idx1: index, %tensor: tensor<*xf32>) -> index {
   %size = rank %tensor : tensor<*xf32>
   // CHECK-NEXT: %[[DIM0:.*]] = dim %[[TENSOR]], %[[IDX0]]
   // CHECK-NEXT: %[[DIM1:.*]] = dim %[[TENSOR]], %[[IDX1]]
@@ -1020,16 +1083,16 @@ func @extract_element_from_dynamic_tensor_from_elements_2d(%idx0: index, %idx1: 
     %3 = addi %1, %2 : index
     yield %3 : index
   } : tensor<?x?xindex>
-  %4 = extract_element %0[%idx0, %idx1] : tensor<?x?xindex>
+  %4 = tensor.extract %0[%idx0, %idx1] : tensor<?x?xindex>
   // CHECK-NEXT: return %[[RES]]
   return %4 : index
 }
 
 // -----
 
-// CHECK-LABEL: func @extract_element_from_dynamic_tensor_from_elements_sideeffects
+// CHECK-LABEL: func @extract_from_dynamic_tensor_from_elements_sideeffects
 // CHECK-SAME: %[[IDX:.*]]: index
-func @extract_element_from_dynamic_tensor_from_elements_sideeffects(%idx: index, %tensor: tensor<*xf32>) -> index {
+func @extract_from_dynamic_tensor_from_elements_sideeffects(%idx: index, %tensor: tensor<*xf32>) -> index {
   %size = rank %tensor : tensor<*xf32>
   %mem = alloc(%size) : memref<?xindex>
   // CHECK: %[[DTENSOR:.*]] = dynamic_tensor_from_elements
@@ -1039,8 +1102,8 @@ func @extract_element_from_dynamic_tensor_from_elements_sideeffects(%idx: index,
     store %1, %mem[%arg0] : memref<?xindex>
     yield %1 : index
   } : tensor<?xindex>
-  // CHECK: %[[RES:.*]] = extract_element %[[DTENSOR]][%[[IDX]]]
-  %1 = extract_element %0[%idx] : tensor<?xindex>
+  // CHECK: %[[RES:.*]] = tensor.extract %[[DTENSOR]][%[[IDX]]]
+  %1 = tensor.extract %0[%idx] : tensor<?xindex>
   // CHECK-NEXT: return %[[RES]]
   return %1 : index
 }
@@ -1109,4 +1172,47 @@ func @tensor_cast_chain_invalid(%input: tensor<4x8xi32>) -> tensor<8x4xi32> {
   %1 = tensor_cast %0 : tensor<?x?xi32> to tensor<8x4xi32>
   // CHECK-NEXT: return %[[C2]]
   return %1 : tensor<8x4xi32>
+}
+
+// -----
+
+// CHECK-LABEL: func @subtensor
+// CHECK-SAME: %[[ARG0:[0-9a-z]*]]: index, %[[ARG1:[0-9a-z]*]]: index
+func @subtensor(%t: tensor<8x16x4xf32>, %arg0 : index, %arg1 : index) 
+  -> tensor<?x?x?xf32> 
+{
+  %c0 = constant 0 : index
+  %c1 = constant 1 : index
+  %c2 = constant 2 : index
+  %c7 = constant 7 : index
+  %c11 = constant 11 : index
+
+  // CHECK: subtensor %{{.*}}[0, 0, 0] [7, 11, 2] [1, 1, 1] :
+  // CHECK-SAME: tensor<8x16x4xf32> to tensor<7x11x2xf32>
+  // CHECK: tensor_cast %{{.*}} : tensor<7x11x2xf32> to tensor<?x?x?xf32>
+  %1 = subtensor %t[%c0, %c0, %c0] [%c7, %c11, %c2] [%c1, %c1, %c1]
+    : tensor<8x16x4xf32> to tensor<?x?x?xf32>
+
+  // Test: subtensor with one dynamic operand can also be folded.
+  // CHECK: subtensor %{{.*}}[0, 0, 0] [2, %[[ARG0]], 2] [1, 1, 1] :
+  // CHECK-SAME: tensor<?x?x?xf32> to tensor<2x?x2xf32>
+  // CHECK: tensor_cast %{{.*}} : tensor<2x?x2xf32> to tensor<?x?x?xf32>
+  %2 = subtensor %1[%c0, %c0, %c0] [%c2, %arg0, %c2] [%c1, %c1, %c1]
+    : tensor<?x?x?xf32> to tensor<?x?x?xf32>
+
+  return %2 : tensor<?x?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @extract_from_tensor_cast
+// CHECK-SAME: %[[TENSOR:.*]]: tensor<*xf32>
+func @extract_from_tensor_cast(%tensor: tensor<*xf32>) -> f32 {
+  // CHECK-NEXT: %[[C0:.*]] = constant 0 : index
+  %c0 = constant 0 : index
+  // CHECK-NOT: tensor_cast
+  %casted = tensor_cast %tensor : tensor<*xf32> to tensor<?xf32>
+  // CHECK-NEXT: tensor.extract %[[TENSOR]][%[[C0]]]
+  %result = tensor.extract %casted[%c0] : tensor<?xf32>
+  return %result : f32
 }

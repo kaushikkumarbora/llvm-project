@@ -113,8 +113,7 @@ bool blockEndsInUnreachable(const BasicBlock &BB) {
   return !(isa<ReturnInst>(I) || isa<IndirectBrInst>(I));
 }
 
-bool unlikelyExecuted(BasicBlock &BB, ProfileSummaryInfo *PSI,
-                      BlockFrequencyInfo *BFI) {
+bool unlikelyExecuted(BasicBlock &BB) {
   // Exception handling blocks are unlikely executed.
   if (BB.isEHPad() || isa<ResumeInst>(BB.getTerminator()))
     return true;
@@ -127,19 +126,12 @@ bool unlikelyExecuted(BasicBlock &BB, ProfileSummaryInfo *PSI,
         return true;
 
   // The block is cold if it has an unreachable terminator, unless it's
-  // preceded by a call to a (possibly warm) noreturn call (e.g. longjmp);
-  // in the case of a longjmp, if the block is cold according to
-  // profile information, we mark it as unlikely to be executed as well.
+  // preceded by a call to a (possibly warm) noreturn call (e.g. longjmp).
   if (blockEndsInUnreachable(BB)) {
     if (auto *CI =
             dyn_cast_or_null<CallInst>(BB.getTerminator()->getPrevNode()))
-      if (CI->hasFnAttr(Attribute::NoReturn)) {
-        if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(CI))
-          return (II->getIntrinsicID() != Intrinsic::eh_sjlj_longjmp) ||
-                 (BFI && PSI->isColdBlock(&BB, BFI));
-        return !CI->getCalledFunction()->getName().contains("longjmp") ||
-               (BFI && PSI->isColdBlock(&BB, BFI));
-      }
+      if (CI->hasFnAttr(Attribute::NoReturn))
+        return false;
     return true;
   }
 
@@ -241,11 +233,11 @@ bool HotColdSplitting::shouldOutlineFrom(const Function &F) const {
 }
 
 /// Get the benefit score of outlining \p Region.
-static int getOutliningBenefit(ArrayRef<BasicBlock *> Region,
-                               TargetTransformInfo &TTI) {
+static InstructionCost getOutliningBenefit(ArrayRef<BasicBlock *> Region,
+                                           TargetTransformInfo &TTI) {
   // Sum up the code size costs of non-terminator instructions. Tight coupling
   // with \ref getOutliningPenalty is needed to model the costs of terminators.
-  int Benefit = 0;
+  InstructionCost Benefit = 0;
   for (BasicBlock *BB : Region)
     for (Instruction &I : BB->instructionsWithoutDebug())
       if (&I != BB->getTerminator())
@@ -332,12 +324,12 @@ Function *HotColdSplitting::extractColdRegion(
   // splitting.
   SetVector<Value *> Inputs, Outputs, Sinks;
   CE.findInputsOutputs(Inputs, Outputs, Sinks);
-  int OutliningBenefit = getOutliningBenefit(Region, TTI);
+  InstructionCost OutliningBenefit = getOutliningBenefit(Region, TTI);
   int OutliningPenalty =
       getOutliningPenalty(Region, Inputs.size(), Outputs.size());
   LLVM_DEBUG(dbgs() << "Split profitability: benefit = " << OutliningBenefit
                     << ", penalty = " << OutliningPenalty << "\n");
-  if (OutliningBenefit <= OutliningPenalty)
+  if (!OutliningBenefit.isValid() || OutliningBenefit <= OutliningPenalty)
     return nullptr;
 
   Function *OrigF = Region[0]->getParent();
@@ -599,7 +591,7 @@ bool HotColdSplitting::outlineColdRegions(Function &F, bool HasProfileSummary) {
       continue;
 
     bool Cold = (BFI && PSI->isColdBlock(BB, BFI)) ||
-                (EnableStaticAnalysis && unlikelyExecuted(*BB, PSI, BFI));
+                (EnableStaticAnalysis && unlikelyExecuted(*BB));
     if (!Cold)
       continue;
 

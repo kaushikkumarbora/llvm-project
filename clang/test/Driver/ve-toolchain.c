@@ -61,6 +61,13 @@
 // NOTINITARRAY: "-fno-use-init-array"
 
 ///-----------------------------------------------------------------------------
+/// Checking -faddrsig
+
+// RUN: %clang -### -target ve %s 2>&1 | FileCheck -check-prefix=DEFADDESIG %s
+// DEFADDESIG: clang{{.*}} "-cc1"
+// DEFADDESIG-NOT: "-faddrsig"
+
+///-----------------------------------------------------------------------------
 /// Checking exceptions
 
 // RUN: %clang -### -target ve %s 2>&1 | FileCheck -check-prefix=DEFEXCEPTION %s
@@ -71,12 +78,12 @@
 /// Passing -fintegrated-as
 
 // RUN: %clang -### -target ve -x assembler %s 2>&1 | \
-// RUN:    FileCheck -check-prefix=NAS_LINK %s
-// RUN: %clang -### -target ve -fintegrated-as -x assembler %s 2>&1 | \
 // RUN:    FileCheck -check-prefix=AS_LINK %s
-
-// NAS_LINK: nas{{.*}}
-// NAS_LINK: nld{{.*}}
+// RUN: %clang -### -target ve -fno-integrated-as -x assembler %s 2>&1 | \
+// RUN:    FileCheck -check-prefix=NAS_LINK %s
 
 // AS_LINK: clang{{.*}} "-cc1as"
 // AS_LINK: nld{{.*}}
+
+// NAS_LINK: nas{{.*}}
+// NAS_LINK: nld{{.*}}

@@ -12,9 +12,9 @@
 #include "mlir/Dialect/Linalg/IR/LinalgTypes.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineMap.h"
-#include "mlir/IR/Function.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/Support/LLVM.h"
 
 namespace mlir {
@@ -33,6 +33,17 @@ public:
   public:
     static unsigned getNumInputs() { return N; }
   };
+};
+
+/// This class provides the API for ops that are known to not have init tensor
+/// operands. Use as a trait as follows:
+///
+///   class CopyOp : public Op<CopyOp, OpTrait::ZeroInitTensors> {
+///
+template <typename ConcreteType>
+class ZeroInitTensors : public TraitBase<ConcreteType, ZeroInitTensors> {
+public:
+  static unsigned getNumInitTensors() { return 0; }
 };
 
 /// This class provides the API for ops that are known to have a specified
@@ -86,6 +97,9 @@ class NamedStructuredOpTrait
 public:
   unsigned getNumInputs() {
     return cast<ConcreteType>(this->getOperation()).inputs().size();
+  }
+  unsigned getNumInitTensors() {
+    return cast<ConcreteType>(this->getOperation()).init_tensors().size();
   }
   unsigned getNumOutputs() {
     ConcreteType concreteOp = cast<ConcreteType>(this->getOperation());

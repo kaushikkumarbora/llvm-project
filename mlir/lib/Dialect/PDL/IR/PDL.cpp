@@ -8,8 +8,8 @@
 
 #include "mlir/Dialect/PDL/IR/PDL.h"
 #include "mlir/Dialect/PDL/IR/PDLTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "llvm/ADT/StringSwitch.h"
 
@@ -34,7 +34,7 @@ Type PDLDialect::parseType(DialectAsmParser &parser) const {
     return Type();
 
   Builder &builder = parser.getBuilder();
-  Type result = llvm::StringSwitch<Type>(keyword)
+  Type result = StringSwitch<Type>(keyword)
                     .Case("attribute", builder.getType<AttributeType>())
                     .Case("operation", builder.getType<OperationType>())
                     .Case("type", builder.getType<TypeType>())
@@ -97,7 +97,7 @@ static LogicalResult verify(AttributeOp op) {
   Value attrType = op.type();
   Optional<Attribute> attrValue = op.value();
 
-  if (!attrValue && isa<RewriteOp>(op.getParentOp()))
+  if (!attrValue && isa<RewriteOp>(op->getParentOp()))
     return op.emitOpError("expected constant value when specified within a "
                           "`pdl.rewrite`");
   if (attrValue && attrType)
@@ -219,7 +219,7 @@ static LogicalResult verifyResultTypesAreInferrable(OperationOp op,
                                                     ResultRange opResults,
                                                     OperandRange resultTypes) {
   // Functor that returns if the given use can be used to infer a type.
-  Block *rewriterBlock = op.getOperation()->getBlock();
+  Block *rewriterBlock = op->getBlock();
   auto canInferTypeFromUse = [&](OpOperand &use) {
     // If the use is within a ReplaceOp and isn't the operation being replaced
     // (i.e. is not the first operand of the replacement), we can infer a type.
@@ -273,7 +273,7 @@ static LogicalResult verifyResultTypesAreInferrable(OperationOp op,
 }
 
 static LogicalResult verify(OperationOp op) {
-  bool isWithinRewrite = isa<RewriteOp>(op.getParentOp());
+  bool isWithinRewrite = isa<RewriteOp>(op->getParentOp());
   if (isWithinRewrite && !op.name())
     return op.emitOpError("must have an operation name when nested within "
                           "a `pdl.rewrite`");

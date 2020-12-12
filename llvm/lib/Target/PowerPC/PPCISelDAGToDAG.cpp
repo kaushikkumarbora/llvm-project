@@ -156,9 +156,6 @@ namespace {
       PPCLowering = Subtarget->getTargetLowering();
       SelectionDAGISel::runOnMachineFunction(MF);
 
-      if (!Subtarget->isSVR4ABI())
-        InsertVRSaveCode(MF);
-
       return true;
     }
 
@@ -296,6 +293,13 @@ namespace {
                                               Align(16));
     }
 
+    /// SelectAddrImmX34 - Returns true if the address N can be represented by
+    /// a base register plus a signed 34-bit displacement. Suitable for use by
+    /// PSTXVP and friends.
+    bool SelectAddrImmX34(SDValue N, SDValue &Disp, SDValue &Base) {
+      return PPCLowering->SelectAddressRegImm34(N, Disp, Base, *CurDAG);
+    }
+
     // Select an address into a single register.
     bool SelectAddr(SDValue N, SDValue &Base) {
       Base = N;
@@ -341,8 +345,6 @@ namespace {
       return true;
     }
 
-    void InsertVRSaveCode(MachineFunction &MF);
-
     StringRef getPassName() const override {
       return "PowerPC DAG->DAG Pattern Instruction Selection";
     }
@@ -375,70 +377,6 @@ private:
   };
 
 } // end anonymous namespace
-
-/// InsertVRSaveCode - Once the entire function has been instruction selected,
-/// all virtual registers are created and all machine instructions are built,
-/// check to see if we need to save/restore VRSAVE.  If so, do it.
-void PPCDAGToDAGISel::InsertVRSaveCode(MachineFunction &Fn) {
-  // Check to see if this function uses vector registers, which means we have to
-  // save and restore the VRSAVE register and update it with the regs we use.
-  //
-  // In this case, there will be virtual registers of vector type created
-  // by the scheduler.  Detect them now.
-  bool HasVectorVReg = false;
-  for (unsigned i = 0, e = RegInfo->getNumVirtRegs(); i != e; ++i) {
-    unsigned Reg = Register::index2VirtReg(i);
-    if (RegInfo->getRegClass(Reg) == &PPC::VRRCRegClass) {
-      HasVectorVReg = true;
-      break;
-    }
-  }
-  if (!HasVectorVReg) return;  // nothing to do.
-
-  // If we have a vector register, we want to emit code into the entry and exit
-  // blocks to save and restore the VRSAVE register.  We do this here (instead
-  // of marking all vector instructions as clobbering VRSAVE) for two reasons:
-  //
-  // 1. This (trivially) reduces the load on the register allocator, by not
-  //    having to represent the live range of the VRSAVE register.
-  // 2. This (more significantly) allows us to create a temporary virtual
-  //    register to hold the saved VRSAVE value, allowing this temporary to be
-  //    register allocated, instead of forcing it to be spilled to the stack.
-
-  // Create two vregs - one to hold the VRSAVE register that is live-in to the
-  // function and one for the value after having bits or'd into it.
-  Register InVRSAVE = RegInfo->createVirtualRegister(&PPC::GPRCRegClass);
-  Register UpdatedVRSAVE = RegInfo->createVirtualRegister(&PPC::GPRCRegClass);
-
-  const TargetInstrInfo &TII = *Subtarget->getInstrInfo();
-  MachineBasicBlock &EntryBB = *Fn.begin();
-  DebugLoc dl;
-  // Emit the following code into the entry block:
-  // InVRSAVE = MFVRSAVE
-  // UpdatedVRSAVE = UPDATE_VRSAVE InVRSAVE
-  // MTVRSAVE UpdatedVRSAVE
-  MachineBasicBlock::iterator IP = EntryBB.begin();  // Insert Point
-  BuildMI(EntryBB, IP, dl, TII.get(PPC::MFVRSAVE), InVRSAVE);
-  BuildMI(EntryBB, IP, dl, TII.get(PPC::UPDATE_VRSAVE),
-          UpdatedVRSAVE).addReg(InVRSAVE);
-  BuildMI(EntryBB, IP, dl, TII.get(PPC::MTVRSAVE)).addReg(UpdatedVRSAVE);
-
-  // Find all return blocks, outputting a restore in each epilog.
-  for (MachineFunction::iterator BB = Fn.begin(), E = Fn.end(); BB != E; ++BB) {
-    if (BB->isReturnBlock()) {
-      IP = BB->end(); --IP;
-
-      // Skip over all terminator instructions, which are part of the return
-      // sequence.
-      MachineBasicBlock::iterator I2 = IP;
-      while (I2 != BB->begin() && (--I2)->isTerminator())
-        IP = I2;
-
-      // Emit: MTVRSAVE InVRSave
-      BuildMI(*BB, IP, dl, TII.get(PPC::MTVRSAVE)).addReg(InVRSAVE);
-    }
-  }
-}
 
 /// getGlobalBaseReg - Output the instructions required to put the
 /// base address to use for accessing globals into a register.
@@ -3668,6 +3606,12 @@ bool PPCDAGToDAGISel::tryIntCompareInGPR(SDNode *N) {
   if (TM.getOptLevel() == CodeGenOpt::None || !TM.isPPC64())
     return false;
 
+  // For POWER10, it is more profitable to use the set boolean extension
+  // instructions rather than the integer compare elimination codegen.
+  // Users can override this via the command line option, `--ppc-gpr-icmps`.
+  if (!(CmpInGPR.getNumOccurrences() > 0) && Subtarget->isISA3_1())
+    return false;
+
   switch (N->getOpcode()) {
   default: break;
   case ISD::ZERO_EXTEND:
@@ -4296,8 +4240,10 @@ static bool mayUseP9Setb(SDNode *N, const ISD::CondCode &CC, SelectionDAG *DAG,
        (FalseRes.getOpcode() != ISD::SELECT_CC || CC != ISD::SETEQ)))
     return false;
 
-  bool InnerIsSel = FalseRes.getOpcode() == ISD::SELECT_CC;
-  SDValue SetOrSelCC = InnerIsSel ? FalseRes : FalseRes.getOperand(0);
+  SDValue SetOrSelCC = FalseRes.getOpcode() == ISD::SELECT_CC
+                           ? FalseRes
+                           : FalseRes.getOperand(0);
+  bool InnerIsSel = SetOrSelCC.getOpcode() == ISD::SELECT_CC;
   if (SetOrSelCC.getOpcode() != ISD::SETCC &&
       SetOrSelCC.getOpcode() != ISD::SELECT_CC)
     return false;
@@ -5022,6 +4968,32 @@ void PPCDAGToDAGISel::Select(SDNode *N) {
     }
 
     // Other cases are autogenerated.
+    break;
+  }
+  case ISD::MUL: {
+    SDValue Op1 = N->getOperand(1);
+    if (Op1.getOpcode() != ISD::Constant || Op1.getValueType() != MVT::i64)
+      break;
+
+    // If the multiplier fits int16, we can handle it with mulli.
+    int64_t Imm = cast<ConstantSDNode>(Op1)->getZExtValue();
+    unsigned Shift = countTrailingZeros<uint64_t>(Imm);
+    if (isInt<16>(Imm) || !Shift)
+      break;
+
+    // If the shifted value fits int16, we can do this transformation:
+    // (mul X, c1 << c2) -> (rldicr (mulli X, c1) c2). We do this in ISEL due to
+    // DAGCombiner prefers (shl (mul X, c1), c2) -> (mul X, c1 << c2).
+    uint64_t ImmSh = Imm >> Shift;
+    if (isInt<16>(ImmSh)) {
+      uint64_t SextImm = SignExtend64(ImmSh & 0xFFFF, 16);
+      SDValue SDImm = CurDAG->getTargetConstant(SextImm, dl, MVT::i64);
+      SDNode *MulNode = CurDAG->getMachineNode(PPC::MULLI8, dl, MVT::i64,
+                                               N->getOperand(0), SDImm);
+      CurDAG->SelectNodeTo(N, PPC::RLDICR, MVT::i64, SDValue(MulNode, 0),
+                           getI32Imm(Shift, dl), getI32Imm(63 - Shift, dl));
+      return;
+    }
     break;
   }
   // FIXME: Remove this once the ANDI glue bug is fixed:

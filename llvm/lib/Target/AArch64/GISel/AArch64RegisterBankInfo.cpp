@@ -466,9 +466,10 @@ AArch64RegisterBankInfo::getSameKindOfOperandsMapping(
                                getValueMapping(RBIdx, Size), NumOperands);
 }
 
-bool AArch64RegisterBankInfo::hasFPConstraints(
-    const MachineInstr &MI, const MachineRegisterInfo &MRI,
-    const TargetRegisterInfo &TRI) const {
+bool AArch64RegisterBankInfo::hasFPConstraints(const MachineInstr &MI,
+                                               const MachineRegisterInfo &MRI,
+                                               const TargetRegisterInfo &TRI,
+                                               unsigned Depth) const {
   unsigned Op = MI.getOpcode();
 
   // Do we have an explicit floating point instruction?
@@ -480,14 +481,30 @@ bool AArch64RegisterBankInfo::hasFPConstraints(
   if (Op != TargetOpcode::COPY && !MI.isPHI())
     return false;
 
-  // MI is copy-like. Return true if it outputs an FPR.
-  return getRegBank(MI.getOperand(0).getReg(), MRI, TRI) ==
-         &AArch64::FPRRegBank;
+  // Check if we already know the register bank.
+  auto *RB = getRegBank(MI.getOperand(0).getReg(), MRI, TRI);
+  if (RB == &AArch64::FPRRegBank)
+    return true;
+  if (RB == &AArch64::GPRRegBank)
+    return false;
+
+  // We don't know anything.
+  //
+  // If we have a phi, we may be able to infer that it will be assigned a FPR
+  // based off of its inputs.
+  if (!MI.isPHI() || Depth > MaxFPRSearchDepth)
+    return false;
+
+  return any_of(MI.explicit_uses(), [&](const MachineOperand &Op) {
+    return Op.isReg() &&
+           onlyDefinesFP(*MRI.getVRegDef(Op.getReg()), MRI, TRI, Depth + 1);
+  });
 }
 
 bool AArch64RegisterBankInfo::onlyUsesFP(const MachineInstr &MI,
                                          const MachineRegisterInfo &MRI,
-                                         const TargetRegisterInfo &TRI) const {
+                                         const TargetRegisterInfo &TRI,
+                                         unsigned Depth) const {
   switch (MI.getOpcode()) {
   case TargetOpcode::G_FPTOSI:
   case TargetOpcode::G_FPTOUI:
@@ -496,12 +513,13 @@ bool AArch64RegisterBankInfo::onlyUsesFP(const MachineInstr &MI,
   default:
     break;
   }
-  return hasFPConstraints(MI, MRI, TRI);
+  return hasFPConstraints(MI, MRI, TRI, Depth);
 }
 
-bool AArch64RegisterBankInfo::onlyDefinesFP(
-    const MachineInstr &MI, const MachineRegisterInfo &MRI,
-    const TargetRegisterInfo &TRI) const {
+bool AArch64RegisterBankInfo::onlyDefinesFP(const MachineInstr &MI,
+                                            const MachineRegisterInfo &MRI,
+                                            const TargetRegisterInfo &TRI,
+                                            unsigned Depth) const {
   switch (MI.getOpcode()) {
   case AArch64::G_DUP:
   case TargetOpcode::G_SITOFP:
@@ -512,7 +530,7 @@ bool AArch64RegisterBankInfo::onlyDefinesFP(
   default:
     break;
   }
-  return hasFPConstraints(MI, MRI, TRI);
+  return hasFPConstraints(MI, MRI, TRI, Depth);
 }
 
 const RegisterBankInfo::InstructionMapping &
@@ -827,7 +845,7 @@ AArch64RegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     }
     break;
   }
-  case TargetOpcode::G_BUILD_VECTOR:
+  case TargetOpcode::G_BUILD_VECTOR: {
     // If the first source operand belongs to a FPR register bank, then make
     // sure that we preserve that.
     if (OpRegBankIdx[1] != PMI_FirstGPR)
@@ -857,6 +875,30 @@ AArch64RegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
       for (unsigned Idx = 0; Idx < NumOperands; ++Idx)
         OpRegBankIdx[Idx] = PMI_FirstFPR;
     }
+    break;
+  }
+  case TargetOpcode::G_VECREDUCE_FADD:
+  case TargetOpcode::G_VECREDUCE_FMUL:
+  case TargetOpcode::G_VECREDUCE_FMAX:
+  case TargetOpcode::G_VECREDUCE_FMIN:
+  case TargetOpcode::G_VECREDUCE_ADD:
+  case TargetOpcode::G_VECREDUCE_MUL:
+  case TargetOpcode::G_VECREDUCE_AND:
+  case TargetOpcode::G_VECREDUCE_OR:
+  case TargetOpcode::G_VECREDUCE_XOR:
+  case TargetOpcode::G_VECREDUCE_SMAX:
+  case TargetOpcode::G_VECREDUCE_SMIN:
+  case TargetOpcode::G_VECREDUCE_UMAX:
+  case TargetOpcode::G_VECREDUCE_UMIN:
+    // Reductions produce a scalar value from a vector, the scalar should be on
+    // FPR bank.
+    OpRegBankIdx = {PMI_FirstFPR, PMI_FirstFPR};
+    break;
+  case TargetOpcode::G_VECREDUCE_SEQ_FADD:
+  case TargetOpcode::G_VECREDUCE_SEQ_FMUL:
+    // These reductions also take a scalar accumulator input.
+    // Assign them FPR for now.
+    OpRegBankIdx = {PMI_FirstFPR, PMI_FirstFPR, PMI_FirstFPR};
     break;
   }
 

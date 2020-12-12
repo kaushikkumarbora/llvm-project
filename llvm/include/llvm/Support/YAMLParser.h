@@ -102,6 +102,8 @@ public:
 
   void printError(Node *N, const Twine &Msg,
                   SourceMgr::DiagKind Kind = SourceMgr::DK_Error);
+  void printError(const SMRange &Range, const Twine &Msg,
+                  SourceMgr::DiagKind Kind = SourceMgr::DK_Error);
 
 private:
   friend class Document;
@@ -510,7 +512,6 @@ public:
       : Node(NK_Alias, D, StringRef(), StringRef()), Name(Val) {}
 
   StringRef getName() const { return Name; }
-  Node *getTarget();
 
   static bool classof(const Node *N) { return N->getType() == NK_Alias; }
 
