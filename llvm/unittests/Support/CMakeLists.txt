@@ -4,6 +4,7 @@ set(LLVM_LINK_COMPONENTS
 
 add_llvm_unittest(SupportTests
   AlignmentTest.cpp
+  AlignOfTest.cpp
   AllocatorTest.cpp
   AnnotationsTest.cpp
   ARMAttributeParser.cpp
@@ -66,6 +67,7 @@ add_llvm_unittest(SupportTests
   ReplaceFileTest.cpp
   RISCVAttributeParserTest.cpp
   ScaledNumberTest.cpp
+  SHA256.cpp
   SourceMgrTest.cpp
   SpecialCaseListTest.cpp
   SuffixTreeTest.cpp

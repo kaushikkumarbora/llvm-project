@@ -265,7 +265,7 @@ public:
       clang::DeclContext::lookup_result result = decl_context->lookup(myName);
 
       if (!result.empty()) {
-        clang::NamedDecl *named_decl = result[0];
+        clang::NamedDecl *named_decl = *result.begin();
         if (const RecordDeclType *record_decl =
                 llvm::dyn_cast<RecordDeclType>(named_decl))
           compiler_type.SetCompilerType(
@@ -600,6 +600,8 @@ public:
   bool IsEnumerationType(lldb::opaque_compiler_type_t type,
                          bool &is_signed) override;
 
+  bool IsScopedEnumerationType(lldb::opaque_compiler_type_t type) override;
+
   static bool IsObjCClassType(const CompilerType &type);
 
   static bool IsObjCClassTypeAndHasIVars(const CompilerType &type,
@@ -665,14 +667,6 @@ public:
 
   // Creating related types
 
-  /// Using the current type, create a new typedef to that type using
-  /// "typedef_name" as the name and "decl_ctx" as the decl context.
-  /// \param opaque_payload is an opaque TypePayloadClang.
-  static CompilerType
-  CreateTypedefType(const CompilerType &type, const char *typedef_name,
-                    const CompilerDeclContext &compiler_decl_ctx,
-                    uint32_t opaque_payload);
-
   CompilerType GetArrayElementType(lldb::opaque_compiler_type_t type,
                                    ExecutionContextScope *exe_scope) override;
 
@@ -683,6 +677,9 @@ public:
 
   CompilerType
   GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
+
+  CompilerType
+  GetEnumerationIntegerType(lldb::opaque_compiler_type_t type) override;
 
   // Returns -1 if this isn't a function of if the function doesn't have a
   // prototype Returns a value >= 0 if there is a prototype.
@@ -720,6 +717,9 @@ public:
 
   CompilerType AddRestrictModifier(lldb::opaque_compiler_type_t type) override;
 
+  /// Using the current type, create a new typedef to that type using
+  /// "typedef_name" as the name and "decl_ctx" as the decl context.
+  /// \param opaque_payload is an opaque TypePayloadClang.
   CompilerType CreateTypedef(lldb::opaque_compiler_type_t type,
                              const char *name,
                              const CompilerDeclContext &decl_ctx,
@@ -1125,7 +1125,7 @@ public:
   /// These ASTs are isolated from the main scratch AST and are each
   /// dedicated to a special language option/feature that makes the contained
   /// AST nodes incompatible with other AST nodes.
-  enum class IsolatedASTKind {
+  enum IsolatedASTKind {
     /// The isolated AST for declarations/types from expressions that imported
     /// type information from a C++ module. The templates from a C++ module
     /// often conflict with the templates we generate from debug information,
@@ -1220,10 +1220,13 @@ private:
   /// imported types.
   std::unique_ptr<ClangASTSource> m_scratch_ast_source_up;
 
+  // FIXME: GCC 5.x doesn't support enum as map keys.
+  typedef int IsolatedASTKey;
+
   /// Map from IsolatedASTKind to their actual TypeSystemClang instance.
   /// This map is lazily filled with sub-ASTs and should be accessed via
   /// `GetSubAST` (which lazily fills this map).
-  std::unordered_map<IsolatedASTKind, std::unique_ptr<TypeSystemClang>>
+  std::unordered_map<IsolatedASTKey, std::unique_ptr<TypeSystemClang>>
       m_isolated_asts;
 };
 

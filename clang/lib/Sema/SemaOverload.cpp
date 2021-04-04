@@ -4106,7 +4106,7 @@ CompareStandardConversionSequences(Sema &S, SourceLocation Loc,
     }
   }
 
-  // In Microsoft mode, prefer an integral conversion to a
+  // In Microsoft mode (below 19.28), prefer an integral conversion to a
   // floating-to-integral conversion if the integral conversion
   // is between types of the same size.
   // For example:
@@ -4118,7 +4118,9 @@ CompareStandardConversionSequences(Sema &S, SourceLocation Loc,
   // }
   // Here, MSVC will call f(int) instead of generating a compile error
   // as clang will do in standard mode.
-  if (S.getLangOpts().MSVCCompat && SCS1.Second == ICK_Integral_Conversion &&
+  if (S.getLangOpts().MSVCCompat &&
+      !S.getLangOpts().isCompatibleWithMSVC(LangOptions::MSVC2019_8) &&
+      SCS1.Second == ICK_Integral_Conversion &&
       SCS2.Second == ICK_Floating_Integral &&
       S.Context.getTypeSize(SCS1.getFromType()) ==
           S.Context.getTypeSize(SCS1.getToType(2)))
@@ -9926,6 +9928,7 @@ bool Sema::isEquivalentInternalLinkageDeclaration(const NamedDecl *A,
 
 void Sema::diagnoseEquivalentInternalLinkageDeclarations(
     SourceLocation Loc, const NamedDecl *D, ArrayRef<const NamedDecl *> Equiv) {
+  assert(D && "Unknown declaration");
   Diag(Loc, diag::ext_equivalent_internal_linkage_decl_in_modules) << D;
 
   Module *M = getOwningModule(D);
@@ -10354,18 +10357,15 @@ void ImplicitConversionSequence::DiagnoseAmbiguousConversion(
                                  const PartialDiagnostic &PDiag) const {
   S.Diag(CaretLoc, PDiag)
     << Ambiguous.getFromType() << Ambiguous.getToType();
-  // FIXME: The note limiting machinery is borrowed from
-  // OverloadCandidateSet::NoteCandidates; there's an opportunity for
-  // refactoring here.
-  const OverloadsShown ShowOverloads = S.Diags.getShowOverloads();
   unsigned CandsShown = 0;
   AmbiguousConversionSequence::const_iterator I, E;
   for (I = Ambiguous.begin(), E = Ambiguous.end(); I != E; ++I) {
-    if (CandsShown >= 4 && ShowOverloads == Ovl_Best)
+    if (CandsShown >= S.Diags.getNumOverloadCandidatesToShow())
       break;
     ++CandsShown;
     S.NoteOverloadCandidate(I->first, I->second);
   }
+  S.Diags.overloadCandidatesShown(CandsShown);
   if (I != E)
     S.Diag(SourceLocation(), diag::note_ovl_too_many_candidates) << int(E - I);
 }
@@ -11643,7 +11643,7 @@ bool OverloadCandidateSet::shouldDeferDiags(Sema &S, ArrayRef<Expr *> Args,
                  (Cand.Function->template hasAttr<CUDAHostAttr>() &&
                   Cand.Function->template hasAttr<CUDADeviceAttr>());
         });
-    DeferHint = WrongSidedCands.size();
+    DeferHint = !WrongSidedCands.empty();
   }
   return DeferHint;
 }
@@ -11676,10 +11676,8 @@ void OverloadCandidateSet::NoteCandidates(Sema &S, ArrayRef<Expr *> Args,
   for (; I != E; ++I) {
     OverloadCandidate *Cand = *I;
 
-    // Set an arbitrary limit on the number of candidate functions we'll spam
-    // the user with.  FIXME: This limit should depend on details of the
-    // candidate list.
-    if (CandsShown >= 4 && ShowOverloads == Ovl_Best) {
+    if (CandsShown >= S.Diags.getNumOverloadCandidatesToShow() &&
+        ShowOverloads == Ovl_Best) {
       break;
     }
     ++CandsShown;
@@ -11707,6 +11705,10 @@ void OverloadCandidateSet::NoteCandidates(Sema &S, ArrayRef<Expr *> Args,
       NoteBuiltinOperatorCandidate(S, Opc, OpLoc, Cand);
     }
   }
+
+  // Inform S.Diags that we've shown an overload set with N elements.  This may
+  // inform the future value of S.Diags.getNumOverloadCandidatesToShow().
+  S.Diags.overloadCandidatesShown(CandsShown);
 
   if (I != E)
     S.Diag(OpLoc, diag::note_ovl_too_many_candidates,
@@ -12923,7 +12925,7 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
     return ExprError();
   }
 
-  // Build an implicit member access expression if appropriate. Just drop the
+  // Build an implicit member call if appropriate.  Just drop the
   // casts and such from the call, we don't really care.
   ExprResult NewFn = ExprError();
   if ((*R.begin())->isCXXClassMember())
@@ -12938,19 +12940,12 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
   if (NewFn.isInvalid())
     return ExprError();
 
-  auto CallE =
-      SemaRef.BuildCallExpr(/*Scope*/ nullptr, NewFn.get(), LParenLoc,
-                            MultiExprArg(Args.data(), Args.size()), RParenLoc);
-  if (CallE.isInvalid())
-    return ExprError();
-  // We now have recovered a callee. However, building a real call may lead to
-  // incorrect secondary diagnostics if our recovery wasn't correct.
-  // We keep the recovery behavior but suppress all following diagnostics by
-  // using RecoveryExpr. We deliberately drop the return type of the recovery
-  // function, and rely on clang's dependent mechanism to suppress following
-  // diagnostics.
-  return SemaRef.CreateRecoveryExpr(CallE.get()->getBeginLoc(),
-                                    CallE.get()->getEndLoc(), {CallE.get()});
+  // This shouldn't cause an infinite loop because we're giving it
+  // an expression with viable lookup results, which should never
+  // end up here.
+  return SemaRef.BuildCallExpr(/*Scope*/ nullptr, NewFn.get(), LParenLoc,
+                               MultiExprArg(Args.data(), Args.size()),
+                               RParenLoc);
 }
 
 /// Constructs and populates an OverloadedCandidateSet from
@@ -13722,6 +13717,15 @@ ExprResult Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
         if (Op == OO_Equal)
           DiagnoseSelfMove(Args[0], Args[1], OpLoc);
 
+        if (ImplicitThis) {
+          QualType ThisType = Context.getPointerType(ImplicitThis->getType());
+          QualType ThisTypeFromDecl = Context.getPointerType(
+              cast<CXXMethodDecl>(FnDecl)->getThisObjectType());
+
+          CheckArgAlignment(OpLoc, FnDecl, "'this'", ThisType,
+                            ThisTypeFromDecl);
+        }
+
         checkCall(FnDecl, nullptr, ImplicitThis, ArgsArray,
                   isa<CXXMethodDecl>(FnDecl), OpLoc, TheCall->getSourceRange(),
                   VariadicDoesNotApply);
@@ -14300,6 +14304,7 @@ ExprResult Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     UnbridgedCasts.restore();
 
     OverloadCandidateSet::iterator Best;
+    bool Succeeded = false;
     switch (CandidateSet.BestViableFunction(*this, UnresExpr->getBeginLoc(),
                                             Best)) {
     case OR_Success:
@@ -14307,7 +14312,7 @@ ExprResult Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
       FoundDecl = Best->FoundDecl;
       CheckUnresolvedMemberAccess(UnresExpr, Best->FoundDecl);
       if (DiagnoseUseOfDecl(Best->FoundDecl, UnresExpr->getNameLoc()))
-        return ExprError();
+        break;
       // If FoundDecl is different from Method (such as if one is a template
       // and the other a specialization), make sure DiagnoseUseOfDecl is
       // called on both.
@@ -14316,7 +14321,8 @@ ExprResult Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
       // being used.
       if (Method != FoundDecl.getDecl() &&
                       DiagnoseUseOfDecl(Method, UnresExpr->getNameLoc()))
-        return ExprError();
+        break;
+      Succeeded = true;
       break;
 
     case OR_No_Viable_Function:
@@ -14326,27 +14332,25 @@ ExprResult Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
               PDiag(diag::err_ovl_no_viable_member_function_in_call)
                   << DeclName << MemExprE->getSourceRange()),
           *this, OCD_AllCandidates, Args);
-      // FIXME: Leaking incoming expressions!
-      return ExprError();
-
+      break;
     case OR_Ambiguous:
       CandidateSet.NoteCandidates(
           PartialDiagnosticAt(UnresExpr->getMemberLoc(),
                               PDiag(diag::err_ovl_ambiguous_member_call)
                                   << DeclName << MemExprE->getSourceRange()),
           *this, OCD_AmbiguousCandidates, Args);
-      // FIXME: Leaking incoming expressions!
-      return ExprError();
-
+      break;
     case OR_Deleted:
       CandidateSet.NoteCandidates(
           PartialDiagnosticAt(UnresExpr->getMemberLoc(),
                               PDiag(diag::err_ovl_deleted_member_call)
                                   << DeclName << MemExprE->getSourceRange()),
           *this, OCD_AllCandidates, Args);
-      // FIXME: Leaking incoming expressions!
-      return ExprError();
+      break;
     }
+    // Overload resolution fails, try to recover.
+    if (!Succeeded)
+      return BuildRecoveryExpr(chooseRecoveryType(CandidateSet, &Best));
 
     MemExprE = FixOverloadedFunctionReference(MemExprE, FoundDecl, Method);
 

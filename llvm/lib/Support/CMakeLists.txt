@@ -36,6 +36,10 @@ elseif( CMAKE_HOST_UNIX )
   if( FUCHSIA )
     set(system_libs ${system_libs} zircon)
   endif()
+  if ( HAIKU )
+    add_definitions(-D_BSD_SOURCE)
+    set(system_libs ${system_libs} bsd)
+  endif()
 endif( MSVC OR MINGW )
 
 # Delay load shell32.dll if possible to speed up process startup.
@@ -158,6 +162,7 @@ add_llvm_component_library(LLVMSupport
   ScaledNumber.cpp
   ScopedPrinter.cpp
   SHA1.cpp
+  SHA256.cpp
   Signposts.cpp
   SmallPtrSet.cpp
   SmallVector.cpp
@@ -180,6 +185,7 @@ add_llvm_component_library(LLVMSupport
   TrigramIndex.cpp
   Triple.cpp
   Twine.cpp
+  TypeSize.cpp
   Unicode.cpp
   UnicodeCaseFold.cpp
   VersionTuple.cpp
@@ -268,8 +274,5 @@ if(LLVM_INTEGRATED_CRT_ALLOC)
 endif()
 
 if(LLVM_WITH_Z3)
-  target_include_directories(LLVMSupport SYSTEM
-    PRIVATE
-    ${Z3_INCLUDE_DIR}
-    )
+  include_directories(SYSTEM ${Z3_INCLUDE_DIR})
 endif()

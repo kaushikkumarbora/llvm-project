@@ -111,7 +111,7 @@ bool GCOVFile::readGCNO(GCOVBuffer &buf) {
     buf.getWord(); // hasUnexecutedBlocks
 
   uint32_t tag, length;
-  GCOVFunction *fn;
+  GCOVFunction *fn = nullptr;
   while ((tag = buf.getWord())) {
     if (!buf.readInt(length))
       return false;
@@ -564,7 +564,7 @@ public:
     // Open source files without requiring a NUL terminator. The concurrent
     // modification may nullify the NUL terminator condition.
     ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
-        MemoryBuffer::getFileOrSTDIN(Filename, -1,
+        MemoryBuffer::getFileOrSTDIN(Filename, /*IsText=*/false,
                                      /*RequiresNullTerminator=*/false);
     if (std::error_code EC = BufferOrErr.getError()) {
       errs() << Filename << ": " << EC.message() << "\n";

@@ -50,8 +50,8 @@ std::string aarch64::getAArch64TargetCPU(const ArgList &Args,
 
   if (Triple.isTargetMachineMac() &&
       Triple.getArch() == llvm::Triple::aarch64) {
-    // Apple Silicon macs default to A12 CPUs.
-    return "apple-a12";
+    // Apple Silicon macs default to A13 CPUs.
+    return "apple-a13";
   }
 
   // Make sure we pick the appropriate Apple CPU if -arch is used or when
@@ -79,9 +79,10 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
     else
       return false;
 
-    // +sve implies +f32mm if the base architecture is v8.6A
+    // +sve implies +f32mm if the base architecture is v8.6A or v8.7A
     // it isn't the case in general that sve implies both f64mm and f32mm
-    if ((ArchKind == llvm::AArch64::ArchKind::ARMV8_6A) && Feature == "sve")
+    if ((ArchKind == llvm::AArch64::ArchKind::ARMV8_6A ||
+         ArchKind == llvm::AArch64::ArchKind::ARMV8_7A) && Feature == "sve")
       Features.push_back("+f32mm");
   }
   return true;

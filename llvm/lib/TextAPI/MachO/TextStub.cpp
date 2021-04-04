@@ -521,13 +521,12 @@ template <> struct MappingTraits<const InterfaceFile *> {
             break;
           }
         }
-        llvm::sort(Section.Symbols.begin(), Section.Symbols.end());
-        llvm::sort(Section.Classes.begin(), Section.Classes.end());
-        llvm::sort(Section.ClassEHs.begin(), Section.ClassEHs.end());
-        llvm::sort(Section.IVars.begin(), Section.IVars.end());
-        llvm::sort(Section.WeakDefSymbols.begin(),
-                   Section.WeakDefSymbols.end());
-        llvm::sort(Section.TLVSymbols.begin(), Section.TLVSymbols.end());
+        llvm::sort(Section.Symbols);
+        llvm::sort(Section.Classes);
+        llvm::sort(Section.ClassEHs);
+        llvm::sort(Section.IVars);
+        llvm::sort(Section.WeakDefSymbols);
+        llvm::sort(Section.TLVSymbols);
         Exports.emplace_back(std::move(Section));
       }
 
@@ -579,12 +578,11 @@ template <> struct MappingTraits<const InterfaceFile *> {
             break;
           }
         }
-        llvm::sort(Section.Symbols.begin(), Section.Symbols.end());
-        llvm::sort(Section.Classes.begin(), Section.Classes.end());
-        llvm::sort(Section.ClassEHs.begin(), Section.ClassEHs.end());
-        llvm::sort(Section.IVars.begin(), Section.IVars.end());
-        llvm::sort(Section.WeakRefSymbols.begin(),
-                   Section.WeakRefSymbols.end());
+        llvm::sort(Section.Symbols);
+        llvm::sort(Section.Classes);
+        llvm::sort(Section.ClassEHs);
+        llvm::sort(Section.IVars);
+        llvm::sort(Section.WeakRefSymbols);
         Undefineds.emplace_back(std::move(Section));
       }
     }
@@ -595,7 +593,7 @@ template <> struct MappingTraits<const InterfaceFile *> {
     // platforms, specifically to filter out the i386 slice from
     // platform macCatalyst.
     TargetList synthesizeTargets(ArchitectureSet Architectures,
-                                          const PlatformSet &Platforms) {
+                                 const PlatformSet &Platforms) {
       TargetList Targets;
 
       for (auto Platform : Platforms) {

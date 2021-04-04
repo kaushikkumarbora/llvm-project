@@ -18,6 +18,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/GPU/GPUDialect.h"
 #include "mlir/Dialect/GPU/ParallelLoopMapper.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExpr.h"
@@ -520,11 +521,11 @@ static LogicalResult processParallelLoop(
 
   // Propagate custom user defined optional attributes, that can be used at
   // later stage, such as extension data for GPU kernel dispatch
-  for (const auto &namedAttr : parallelOp.getAttrs()) {
+  for (const auto &namedAttr : parallelOp->getAttrs()) {
     if (namedAttr.first == gpu::getMappingAttrName() ||
         namedAttr.first == ParallelOp::getOperandSegmentSizeAttr())
       continue;
-    launchOp.setAttr(namedAttr.first, namedAttr.second);
+    launchOp->setAttr(namedAttr.first, namedAttr.second);
   }
 
   Block *body = parallelOp.getBody();
@@ -641,13 +642,13 @@ ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
   return success();
 }
 
-void mlir::populateParallelLoopToGPUPatterns(OwningRewritePatternList &patterns,
-                                             MLIRContext *ctx) {
-  patterns.insert<ParallelToGpuLaunchLowering>(ctx);
+void mlir::populateParallelLoopToGPUPatterns(RewritePatternSet &patterns) {
+  patterns.add<ParallelToGpuLaunchLowering>(patterns.getContext());
 }
 
 void mlir::configureParallelLoopToGPULegality(ConversionTarget &target) {
+  target.addLegalDialect<memref::MemRefDialect>();
   target.addDynamicallyLegalOp<scf::ParallelOp>([](scf::ParallelOp parallelOp) {
-    return !parallelOp.getAttr(gpu::getMappingAttrName());
+    return !parallelOp->getAttr(gpu::getMappingAttrName());
   });
 }

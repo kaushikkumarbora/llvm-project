@@ -87,8 +87,11 @@
 #include <exception>
 #include <execution>
 #include <fenv.h>
-#include <filesystem>
+#ifndef _LIBCPP_HAS_NO_FILESYSTEM_LIBRARY
+#    include <filesystem>
+#endif
 #include <float.h>
+#include <format>
 #include <forward_list>
 #ifndef _LIBCPP_HAS_NO_LOCALIZATION
 #    include <fstream>
@@ -179,9 +182,9 @@
 #    include <thread>
 #endif
 #include <tuple>
+#include <type_traits>
 #include <typeindex>
 #include <typeinfo>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -199,7 +202,9 @@
 #        include <experimental/coroutine>
 #    endif
 #    include <experimental/deque>
-#    include <experimental/filesystem>
+#    ifndef _LIBCPP_HAS_NO_FILESYSTEM_LIBRARY
+#        include <experimental/filesystem>
+#    endif
 #    include <experimental/forward_list>
 #    include <experimental/functional>
 #    include <experimental/iterator>

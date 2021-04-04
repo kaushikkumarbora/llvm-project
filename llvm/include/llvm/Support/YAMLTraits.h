@@ -15,6 +15,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/AlignOf.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Regex.h"
@@ -638,6 +639,7 @@ inline bool isNull(StringRef S) {
 }
 
 inline bool isBool(StringRef S) {
+  // FIXME: using parseBool is causing multiple tests to fail.
   return S.equals("true") || S.equals("True") || S.equals("TRUE") ||
          S.equals("false") || S.equals("False") || S.equals("FALSE");
 }
@@ -1311,7 +1313,7 @@ struct MappingNormalization {
   TNorm* operator->() { return BufPtr; }
 
 private:
-  using Storage = std::aligned_union_t<1, TNorm>;
+  using Storage = AlignedCharArrayUnion<TNorm>;
 
   Storage       Buffer;
   IO           &io;
@@ -1348,7 +1350,7 @@ struct MappingNormalizationHeap {
   TNorm* operator->() { return BufPtr; }
 
 private:
-  using Storage = std::aligned_union_t<1, TNorm>;
+  using Storage = AlignedCharArrayUnion<TNorm>;
 
   Storage       Buffer;
   IO           &io;
@@ -1584,7 +1586,7 @@ public:
 private:
   void output(StringRef s);
   void outputUpToEndOfLine(StringRef s);
-  void newLineCheck();
+  void newLineCheck(bool EmptySequence = false);
   void outputNewLine();
   void paddedKey(StringRef key);
   void flowKey(StringRef Key);

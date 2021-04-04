@@ -592,7 +592,7 @@ void Output::endSequence() {
   // If we did not emit anything, we should explicitly emit an empty sequence
   if (StateStack.back() == inSeqFirstElement) {
     Padding = PaddingBeforeContainer;
-    newLineCheck();
+    newLineCheck(/*EmptySequence=*/true);
     output("[]");
     Padding = "\n";
   }
@@ -798,7 +798,7 @@ void Output::outputNewLine() {
 // if seq in middle, use "- " if firstKey, else use "  "
 //
 
-void Output::newLineCheck() {
+void Output::newLineCheck(bool EmptySequence) {
   if (Padding != "\n") {
     output(Padding);
     Padding = {};
@@ -807,7 +807,7 @@ void Output::newLineCheck() {
   outputNewLine();
   Padding = {};
 
-  if (StateStack.size() == 0)
+  if (StateStack.size() == 0 || EmptySequence)
     return;
 
   unsigned Indent = StateStack.size() - 1;
@@ -831,7 +831,6 @@ void Output::newLineCheck() {
   if (OutputDash) {
     output("- ");
   }
-
 }
 
 void Output::paddedKey(StringRef key) {
@@ -885,11 +884,8 @@ void ScalarTraits<bool>::output(const bool &Val, void *, raw_ostream &Out) {
 }
 
 StringRef ScalarTraits<bool>::input(StringRef Scalar, void *, bool &Val) {
-  if (Scalar.equals("true")) {
-    Val = true;
-    return StringRef();
-  } else if (Scalar.equals("false")) {
-    Val = false;
+  if (llvm::Optional<bool> Parsed = parseBool(Scalar)) {
+    Val = *Parsed;
     return StringRef();
   }
   return "invalid boolean";

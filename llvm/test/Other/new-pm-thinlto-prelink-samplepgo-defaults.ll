@@ -46,6 +46,9 @@
 ; CHECK-O-NEXT: Running pass: InstCombinePass on foo
 ; CHECK-O-NEXT: Running analysis: OptimizationRemarkEmitterAnalysis on foo
 ; CHECK-O-NEXT: Running analysis: AAManager on foo
+; CHECK-O-NEXT: Running analysis: BasicAA
+; CHECK-O-NEXT: Running analysis: ScopedNoAliasAA
+; CHECK-O-NEXT: Running analysis: TypeBasedAA
 ; CHECK-O-NEXT: Running analysis: OuterAnalysisManagerProxy
 ; CHECK-O-NEXT: Finished {{.*}}Function pass manager run.
 ; CHECK-O-NEXT: Running pass: SampleProfileLoaderPass
@@ -70,6 +73,9 @@
 ; CHECK-O-NEXT: Running pass: ModuleInlinerWrapperPass
 ; CHECK-O-NEXT: Running analysis: InlineAdvisorAnalysis
 ; CHECK-O-NEXT: Starting {{.*}}Module pass manager run.
+; CHECK-O-NEXT: Running pass: RequireAnalysisPass<{{.*}}GlobalsAA
+; CHECK-O-NEXT: Running analysis: GlobalsAA
+; CHECK-O-NEXT: Running pass: RequireAnalysisPass<{{.*}}ProfileSummaryAnalysis
 ; CHECK-O-NEXT: Running analysis: InnerAnalysisManagerProxy
 ; CHECK-O-NEXT: Running analysis: LazyCallGraphAnalysis
 ; CHECK-O-NEXT: Running analysis: FunctionAnalysisManagerCGSCCProxy
@@ -77,15 +83,6 @@
 ; CHECK-O-NEXT: Running pass: DevirtSCCRepeatedPass
 ; CHECK-O-NEXT: Starting CGSCC pass manager run.
 ; CHECK-O-NEXT: Running pass: InlinerPass
-; CHECK-O-NEXT: Finished CGSCC pass manager run.
-; CHECK-O-NEXT: Finished llvm::Module pass manager run.
-; CHECK-O-NEXT: Running pass: ModuleInlinerWrapperPass
-; CHECK-O-NEXT: Starting llvm::Module pass manager run.
-; CHECK-O-NEXT: Running pass: RequireAnalysisPass<{{.*}}GlobalsAA
-; CHECK-O-NEXT: Running analysis: GlobalsAA
-; CHECK-O-NEXT: Running pass: RequireAnalysisPass<{{.*}}ProfileSummaryAnalysis
-; CHECK-O-NEXT: Running pass: DevirtSCCRepeatedPass
-; CHECK-O-NEXT: Starting CGSCC pass manager run.
 ; CHECK-O-NEXT: Running pass: InlinerPass
 ; CHECK-O-NEXT: Running pass: PostOrderFunctionAttrsPass
 ; CHECK-O3-NEXT: Running pass: ArgumentPromotionPass
@@ -119,6 +116,7 @@
 ; CHECK-O-NEXT: Starting Loop pass manager run.
 ; CHECK-O-NEXT: Running pass: LoopInstSimplifyPass
 ; CHECK-O-NEXT: Running pass: LoopSimplifyCFGPass
+; CHECK-O-NEXT: Running pass: LICM
 ; CHECK-O-NEXT: Running pass: LoopRotatePass
 ; CHECK-O-NEXT: Running pass: LICM
 ; CHECK-O-NEXT: Running pass: SimpleLoopUnswitchPass
@@ -151,9 +149,7 @@
 ; CHECK-O3-NEXT: Running pass: GVN
 ; CHECK-O3-NEXT: Running analysis: MemoryDependenceAnalysis
 ; CHECK-O3-NEXT: Running analysis: PhiValuesAnalysis
-; CHECK-O-NEXT: Running pass: MemCpyOptPass
-; CHECK-O1-NEXT: Running analysis: MemoryDependenceAnalysis
-; CHECK-O1-NEXT: Running analysis: PhiValuesAnalysis
+; CHECK-O1-NEXT: Running pass: MemCpyOptPass
 ; CHECK-O-NEXT: Running pass: SCCPPass
 ; CHECK-O-NEXT: Running pass: BDCEPass
 ; CHECK-O-NEXT: Running analysis: DemandedBitsAnalysis
@@ -163,6 +159,7 @@
 ; CHECK-O23SZ-NEXT: Running pass: CorrelatedValuePropagationPass
 ; CHECK-O23SZ-NEXT: Invalidating analysis: LazyValueAnalysis
 ; CHECK-O-NEXT: Running pass: ADCEPass
+; CHECK-O23SZ-NEXT: Running pass: MemCpyOptPass
 ; CHECK-O23SZ-NEXT: Running pass: DSEPass
 ; CHECK-O23SZ-NEXT: Starting {{.*}}Function pass manager run
 ; CHECK-O23SZ-NEXT: Running pass: LoopSimplifyPass
