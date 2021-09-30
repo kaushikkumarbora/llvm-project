@@ -21,8 +21,9 @@ namespace llvm {
 
 class GCNSubtarget;
 class LiveIntervals;
+class LivePhysRegs;
 class RegisterBank;
-class SIMachineFunctionInfo;
+struct SGPRSpillBuilder;
 
 class SIRegisterInfo final : public AMDGPUGenRegisterInfo {
 private:
@@ -106,18 +107,25 @@ public:
   const TargetRegisterClass *getPointerRegClass(
     const MachineFunction &MF, unsigned Kind = 0) const override;
 
-  void buildSGPRSpillLoadStore(MachineBasicBlock::iterator MI, int Index,
-                               int Offset, unsigned EltSize, Register VGPR,
-                               int64_t VGPRLanes, RegScavenger *RS,
-                               bool IsLoad) const;
+  /// Returns a legal register class to copy a register in the specified class
+  /// to or from. If it is possible to copy the register directly without using
+  /// a cross register class copy, return the specified RC. Returns NULL if it
+  /// is not possible to copy between two registers of the specified class.
+  const TargetRegisterClass *
+  getCrossCopyRegClass(const TargetRegisterClass *RC) const override;
+
+  void buildVGPRSpillLoadStore(SGPRSpillBuilder &SB, int Index, int Offset,
+                               bool IsLoad, bool IsKill = true) const;
 
   /// If \p OnlyToVGPR is true, this will only succeed if this
   bool spillSGPR(MachineBasicBlock::iterator MI,
                  int FI, RegScavenger *RS,
+                 LiveIntervals *LIS = nullptr,
                  bool OnlyToVGPR = false) const;
 
   bool restoreSGPR(MachineBasicBlock::iterator MI,
                    int FI, RegScavenger *RS,
+                   LiveIntervals *LIS = nullptr,
                    bool OnlyToVGPR = false) const;
 
   void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
@@ -125,7 +133,8 @@ public:
                            RegScavenger *RS) const override;
 
   bool eliminateSGPRToVGPRSpillFrameIndex(MachineBasicBlock::iterator MI,
-                                          int FI, RegScavenger *RS) const;
+                                          int FI, RegScavenger *RS,
+                                          LiveIntervals *LIS = nullptr) const;
 
   StringRef getRegAsmName(MCRegister Reg) const override;
 
@@ -158,6 +167,11 @@ public:
   }
 
   bool isSGPRReg(const MachineRegisterInfo &MRI, Register Reg) const;
+
+  /// \returns true if this class contains only VGPR registers
+  bool isVGPRClass(const TargetRegisterClass *RC) const {
+    return hasVGPRs(RC) && !hasAGPRs(RC);
+  }
 
   /// \returns true if this class contains only AGPR registers
   bool isAGPRClass(const TargetRegisterClass *RC) const {
@@ -342,16 +356,16 @@ public:
   /// of the subtarget.
   ArrayRef<MCPhysReg> getAllSGPR32(const MachineFunction &MF) const;
 
-private:
-  void buildSpillLoadStore(MachineBasicBlock::iterator MI,
-                           unsigned LoadStoreOp,
-                           int Index,
-                           Register ValueReg,
-                           bool ValueIsKill,
-                           MCRegister ScratchOffsetReg,
-                           int64_t InstrOffset,
-                           MachineMemOperand *MMO,
-                           RegScavenger *RS) const;
+  // Insert spill or restore instructions.
+  // When lowering spill pseudos, the RegScavenger should be set.
+  // For creating spill instructions during frame lowering, where no scavenger
+  // is available, LiveRegs can be used.
+  void buildSpillLoadStore(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator MI, unsigned LoadStoreOp,
+                           int Index, Register ValueReg, bool ValueIsKill,
+                           MCRegister ScratchOffsetReg, int64_t InstrOffset,
+                           MachineMemOperand *MMO, RegScavenger *RS,
+                           LivePhysRegs *LiveRegs = nullptr) const;
 };
 
 } // End namespace llvm

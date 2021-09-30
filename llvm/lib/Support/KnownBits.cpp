@@ -412,10 +412,14 @@ KnownBits KnownBits::abs(bool IntMinIsPoison) const {
   return KnownAbs;
 }
 
-KnownBits KnownBits::computeForMul(const KnownBits &LHS, const KnownBits &RHS) {
+KnownBits KnownBits::mul(const KnownBits &LHS, const KnownBits &RHS,
+                         bool SelfMultiply) {
   unsigned BitWidth = LHS.getBitWidth();
+  assert(BitWidth == RHS.getBitWidth() && !LHS.hasConflict() &&
+         !RHS.hasConflict() && "Operand mismatch");
+  assert((!SelfMultiply || (LHS.One == RHS.One && LHS.Zero == RHS.Zero)) &&
+         "Self multiplication knownbits mismatch");
 
-  assert(!LHS.hasConflict() && !RHS.hasConflict());
   // Compute a conservative estimate for high known-0 bits.
   unsigned LeadZ =
       std::max(LHS.countMinLeadingZeros() + RHS.countMinLeadingZeros(),
@@ -488,6 +492,14 @@ KnownBits KnownBits::computeForMul(const KnownBits &LHS, const KnownBits &RHS) {
   Res.Zero.setHighBits(LeadZ);
   Res.Zero |= (~BottomKnown).getLoBits(ResultBitsKnown);
   Res.One = BottomKnown.getLoBits(ResultBitsKnown);
+
+  // If we're self-multiplying then bit[1] is guaranteed to be zero.
+  if (SelfMultiply && BitWidth > 1) {
+    assert(Res.One[1] == 0 &&
+           "Self-multiplication failed Quadratic Reciprocity!");
+    Res.Zero.setBit(1);
+  }
+
   return Res;
 }
 
@@ -497,7 +509,7 @@ KnownBits KnownBits::mulhs(const KnownBits &LHS, const KnownBits &RHS) {
          !RHS.hasConflict() && "Operand mismatch");
   KnownBits WideLHS = LHS.sext(2 * BitWidth);
   KnownBits WideRHS = RHS.sext(2 * BitWidth);
-  return computeForMul(WideLHS, WideRHS).extractBits(BitWidth, BitWidth);
+  return mul(WideLHS, WideRHS).extractBits(BitWidth, BitWidth);
 }
 
 KnownBits KnownBits::mulhu(const KnownBits &LHS, const KnownBits &RHS) {
@@ -506,7 +518,7 @@ KnownBits KnownBits::mulhu(const KnownBits &LHS, const KnownBits &RHS) {
          !RHS.hasConflict() && "Operand mismatch");
   KnownBits WideLHS = LHS.zext(2 * BitWidth);
   KnownBits WideRHS = RHS.zext(2 * BitWidth);
-  return computeForMul(WideLHS, WideRHS).extractBits(BitWidth, BitWidth);
+  return mul(WideLHS, WideRHS).extractBits(BitWidth, BitWidth);
 }
 
 KnownBits KnownBits::udiv(const KnownBits &LHS, const KnownBits &RHS) {

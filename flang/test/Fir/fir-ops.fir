@@ -441,51 +441,6 @@ fir.dispatch_table @dispatch_tbl {
   fir.dt_entry "method", @method_impl
 }
 
-// CHECK-LABEL: func @compare_real(
-// CHECK-SAME: [[VAL_133:%.*]]: f128, [[VAL_134:%.*]]: f128) {
-func @compare_real(%a : f128, %b : f128) {
-
-// CHECK: [[VAL_135:%.*]] = fir.cmpf "false", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_136:%.*]] = fir.cmpf "oeq", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_137:%.*]] = fir.cmpf "ogt", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_138:%.*]] = fir.cmpf "oge", [[VAL_133]], [[VAL_134]] : f128
-  %d0 = fir.cmpf "false", %a, %b : f128
-  %d1 = fir.cmpf "oeq", %a, %b : f128
-  %d2 = fir.cmpf "ogt", %a, %b : f128
-  %d3 = fir.cmpf "oge", %a, %b : f128
-
-// CHECK: [[VAL_139:%.*]] = fir.cmpf "olt", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_140:%.*]] = fir.cmpf "ole", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_141:%.*]] = fir.cmpf "one", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_142:%.*]] = fir.cmpf "ord", [[VAL_133]], [[VAL_134]] : f128
-  %a0 = fir.cmpf "olt", %a, %b : f128
-  %a1 = fir.cmpf "ole", %a, %b : f128
-  %a2 = fir.cmpf "one", %a, %b : f128
-  %a3 = fir.cmpf "ord", %a, %b : f128
-
-// CHECK: [[VAL_143:%.*]] = fir.cmpf "ueq", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_144:%.*]] = fir.cmpf "ugt", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_145:%.*]] = fir.cmpf "uge", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_146:%.*]] = fir.cmpf "ult", [[VAL_133]], [[VAL_134]] : f128
-  %b0 = fir.cmpf "ueq", %a, %b : f128
-  %b1 = fir.cmpf "ugt", %a, %b : f128
-  %b2 = fir.cmpf "uge", %a, %b : f128
-  %b3 = fir.cmpf "ult", %a, %b : f128
-
-// CHECK: [[VAL_147:%.*]] = fir.cmpf "ule", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_148:%.*]] = fir.cmpf "une", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_149:%.*]] = fir.cmpf "uno", [[VAL_133]], [[VAL_134]] : f128
-// CHECK: [[VAL_150:%.*]] = fir.cmpf "true", [[VAL_133]], [[VAL_134]] : f128
-  %c0 = fir.cmpf "ule", %a, %b : f128
-  %c1 = fir.cmpf "une", %a, %b : f128
-  %c2 = fir.cmpf "uno", %a, %b : f128
-  %c3 = fir.cmpf "true", %a, %b : f128
-
-// CHECK: return
-// CHECK: }
-  return
-}
-
 // CHECK-LABEL: func @compare_complex(
 // CHECK-SAME: [[VAL_151:%.*]]: !fir.complex<16>, [[VAL_152:%.*]]: !fir.complex<16>) {
 func @compare_complex(%a : !fir.complex<16>, %b : !fir.complex<16>) {
@@ -666,10 +621,10 @@ func @test_misc_ops(%arr1 : !fir.ref<!fir.array<?x?xf32>>, %m : index, %n : inde
   %c1_i32 = constant 9 : i32
 
   // CHECK: [[ARR2:%.*]] = fir.zero_bits !fir.array<10xi32>
-  // CHECK: [[ARR3:%.*]] = fir.insert_on_range [[ARR2]], [[C1_I32]], [[C2]], [[C9]] : (!fir.array<10xi32>, i32, index, index) -> !fir.array<10xi32>
+  // CHECK: [[ARR3:%.*]] = fir.insert_on_range [[ARR2]], [[C1_I32]], [2 : index, 9 : index] : (!fir.array<10xi32>, i32) -> !fir.array<10xi32>
   // CHECK: fir.call @noret1([[ARR3]]) : (!fir.array<10xi32>) -> ()
   %arr2 = fir.zero_bits !fir.array<10xi32>
-  %arr3 = fir.insert_on_range %arr2, %c1_i32, %c2, %c9 : (!fir.array<10xi32>, i32, index, index) -> !fir.array<10xi32>
+    %arr3 = fir.insert_on_range %arr2, %c1_i32, [2 : index, 9 : index] : (!fir.array<10xi32>, i32) -> !fir.array<10xi32>
   fir.call @noret1(%arr3) : (!fir.array<10xi32>) -> ()
 
   // CHECK: [[SHAPE:%.*]] = fir.shape_shift [[INDXM:%.*]], [[INDXN:%.*]], [[INDXO:%.*]], [[INDXP:%.*]] : (index, index, index, index) -> !fir.shapeshift<2>
@@ -714,5 +669,16 @@ func @test_rebox(%arg0: !fir.box<!fir.array<?xf32>>) {
   // CHECK: fir.rebox %{{.*}}(%{{.*}}) : (!fir.box<!fir.array<?xf32>>, !fir.shape<2>) -> !fir.box<!fir.array<?x?xf32>>
   %4 = fir.rebox %2(%3) : (!fir.box<!fir.array<?xf32>>, !fir.shape<2>) -> !fir.box<!fir.array<?x?xf32>>
   fir.call @bar_rebox_test(%4) : (!fir.box<!fir.array<?x?xf32>>) -> ()
+  return
+}
+
+// CHECK-LABEL: @test_save_result(
+func @test_save_result(%buffer: !fir.ref<!fir.array<?x!fir.char<1,?>>>) {
+  %c100 = constant 100 : index
+  %c50 = constant 50 : index
+  %shape = fir.shape %c100 : (index) -> !fir.shape<1>
+  %res = fir.call @array_func() : () -> !fir.array<?x!fir.char<1,?>>
+  // CHECK: fir.save_result %{{.*}} to %{{.*}}(%{{.*}}) typeparams %{{.*}} : !fir.array<?x!fir.char<1,?>>, !fir.ref<!fir.array<?x!fir.char<1,?>>>, !fir.shape<1>, index
+  fir.save_result %res to %buffer(%shape) typeparams %c50 : !fir.array<?x!fir.char<1,?>>, !fir.ref<!fir.array<?x!fir.char<1,?>>>, !fir.shape<1>, index
   return
 }

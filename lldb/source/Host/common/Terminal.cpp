@@ -12,8 +12,8 @@
 #include "lldb/Host/PosixApi.h"
 #include "llvm/ADT/STLExtras.h"
 
+#include <csignal>
 #include <fcntl.h>
-#include <signal.h>
 
 #if LLDB_ENABLE_TERMIOS
 #include <termios.h>
@@ -83,15 +83,16 @@ bool Terminal::SetCanonical(bool enabled) {
 
 // Default constructor
 TerminalState::TerminalState()
-    : m_tty(), m_tflags(-1),
+    : m_tty()
 #if LLDB_ENABLE_TERMIOS
-      m_termios_up(),
+      ,
+      m_termios_up()
 #endif
-      m_process_group(-1) {
+{
 }
 
 // Destructor
-TerminalState::~TerminalState() {}
+TerminalState::~TerminalState() = default;
 
 void TerminalState::Clear() {
   m_tty.Clear();
@@ -186,51 +187,4 @@ bool TerminalState::TTYStateIsValid() const {
 // Returns true if m_process_group is valid
 bool TerminalState::ProcessGroupIsValid() const {
   return static_cast<int32_t>(m_process_group) != -1;
-}
-
-// Constructor
-TerminalStateSwitcher::TerminalStateSwitcher() : m_currentState(UINT32_MAX) {}
-
-// Destructor
-TerminalStateSwitcher::~TerminalStateSwitcher() {}
-
-// Returns the number of states that this switcher contains
-uint32_t TerminalStateSwitcher::GetNumberOfStates() const {
-  return llvm::array_lengthof(m_ttystates);
-}
-
-// Restore the state at index "idx".
-//
-// Returns true if the restore was successful, false otherwise.
-bool TerminalStateSwitcher::Restore(uint32_t idx) const {
-  const uint32_t num_states = GetNumberOfStates();
-  if (idx >= num_states)
-    return false;
-
-  // See if we already are in this state?
-  if (m_currentState < num_states && (idx == m_currentState) &&
-      m_ttystates[idx].IsValid())
-    return true;
-
-  // Set the state to match the index passed in and only update the current
-  // state if there are no errors.
-  if (m_ttystates[idx].Restore()) {
-    m_currentState = idx;
-    return true;
-  }
-
-  // We failed to set the state. The tty state was invalid or not initialized.
-  return false;
-}
-
-// Save the state at index "idx" for file descriptor "fd" and save the process
-// group if requested.
-//
-// Returns true if the restore was successful, false otherwise.
-bool TerminalStateSwitcher::Save(uint32_t idx, int fd,
-                                 bool save_process_group) {
-  const uint32_t num_states = GetNumberOfStates();
-  if (idx < num_states)
-    return m_ttystates[idx].Save(fd, save_process_group);
-  return false;
 }

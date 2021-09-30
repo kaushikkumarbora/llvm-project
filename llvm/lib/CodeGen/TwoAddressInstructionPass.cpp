@@ -527,6 +527,11 @@ bool TwoAddressInstructionPass::isProfitableToCommute(Register RegA,
   if (isRevCopyChain(RegB, RegA, MaxDataFlowEdge))
     return false;
 
+  // Look for other target specific commute preference.
+  bool Commute;
+  if (TII->hasCommutePreference(*MI, Commute))
+    return Commute;
+
   // Since there are no intervening uses for both registers, then commute
   // if the def of RegC is closer. Its live interval is shorter.
   return LastDefB && LastDefC && LastDefC > LastDefB;
@@ -585,19 +590,13 @@ bool TwoAddressInstructionPass::isProfitableToConv3Addr(Register RegA,
 bool TwoAddressInstructionPass::convertInstTo3Addr(
     MachineBasicBlock::iterator &mi, MachineBasicBlock::iterator &nmi,
     Register RegA, Register RegB, unsigned Dist) {
-  // FIXME: Why does convertToThreeAddress() need an iterator reference?
-  MachineFunction::iterator MFI = MBB->getIterator();
-  MachineInstr *NewMI = TII->convertToThreeAddress(MFI, *mi, LV);
-  assert(MBB->getIterator() == MFI &&
-         "convertToThreeAddress changed iterator reference");
+  MachineInstrSpan MIS(mi, MBB);
+  MachineInstr *NewMI = TII->convertToThreeAddress(*mi, LV);
   if (!NewMI)
     return false;
 
   LLVM_DEBUG(dbgs() << "2addr: CONVERTING 2-ADDR: " << *mi);
   LLVM_DEBUG(dbgs() << "2addr:         TO 3-ADDR: " << *NewMI);
-
-  if (LIS)
-    LIS->ReplaceMachineInstrInMaps(*mi, *NewMI);
 
   // If the old instruction is debug value tracked, an update is required.
   if (auto OldInstrNum = mi->peekDebugInstrNum()) {
@@ -617,7 +616,27 @@ bool TwoAddressInstructionPass::convertInstTo3Addr(
                                    std::make_pair(NewInstrNum, NewIdx));
   }
 
+  // If convertToThreeAddress created a single new instruction, assume it has
+  // exactly the same effect on liveness as the old instruction. This is much
+  // more efficient than calling repairIntervalsInRange.
+  bool SingleInst = std::next(MIS.begin(), 2) == MIS.end();
+  if (LIS && SingleInst)
+    LIS->ReplaceMachineInstrInMaps(*mi, *NewMI);
+
+  SmallVector<Register> OrigRegs;
+  if (LIS && !SingleInst) {
+    for (const MachineOperand &MO : mi->operands()) {
+      if (MO.isReg())
+        OrigRegs.push_back(MO.getReg());
+    }
+
+    LIS->RemoveMachineInstrFromMaps(*mi);
+  }
+
   MBB->erase(mi); // Nuke the old inst.
+
+  if (LIS && !SingleInst)
+    LIS->repairIntervalsInRange(MBB, MIS.begin(), MIS.end(), OrigRegs);
 
   DistanceMap.insert(std::make_pair(NewMI, Dist));
   mi = NewMI;
@@ -662,8 +681,7 @@ void TwoAddressInstructionPass::scanUses(Register DstReg) {
     unsigned ToReg = VirtRegPairs.back();
     VirtRegPairs.pop_back();
     while (!VirtRegPairs.empty()) {
-      unsigned FromReg = VirtRegPairs.back();
-      VirtRegPairs.pop_back();
+      unsigned FromReg = VirtRegPairs.pop_back_val();
       bool isNew = DstRegMap.insert(std::make_pair(FromReg, ToReg)).second;
       if (!isNew)
         assert(DstRegMap[FromReg] == ToReg &&"Can't map to two dst registers!");
@@ -1283,6 +1301,8 @@ tryInstructionTransform(MachineBasicBlock::iterator &mi,
               if (MO.isReg())
                 OrigRegs.push_back(MO.getReg());
             }
+
+            LIS->RemoveMachineInstrFromMaps(MI);
           }
 
           MI.eraseFromParent();
@@ -1435,6 +1455,10 @@ TwoAddressInstructionPass::processTiedPairs(MachineInstr *MI,
         SlotIndex endIdx =
             LIS->getInstructionIndex(*MI).getRegSlot(IsEarlyClobber);
         LI.addSegment(LiveInterval::Segment(LastCopyIdx, endIdx, VNI));
+        for (auto &S : LI.subranges()) {
+          VNI = S.getNextValue(LastCopyIdx, LIS->getVNInfoAllocator());
+          S.addSegment(LiveInterval::Segment(LastCopyIdx, endIdx, VNI));
+        }
       }
     }
 
@@ -1717,6 +1741,9 @@ eliminateRegSequence(MachineBasicBlock::iterator &MBBI) {
     for (int j = MI.getNumOperands() - 1, ee = 0; j > ee; --j)
       MI.RemoveOperand(j);
   } else {
+    if (LIS)
+      LIS->RemoveMachineInstrFromMaps(MI);
+
     LLVM_DEBUG(dbgs() << "Eliminated: " << MI);
     MI.eraseFromParent();
   }
