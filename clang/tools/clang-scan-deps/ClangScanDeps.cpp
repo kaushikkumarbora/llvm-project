@@ -170,6 +170,11 @@ static llvm::cl::opt<std::string> ModuleFilesDir(
                    "specified directory instead the module cache directory."),
     llvm::cl::cat(DependencyScannerCategory));
 
+static llvm::cl::opt<bool> OptimizeArgs(
+    "optimize-args",
+    llvm::cl::desc("Whether to optimize command-line arguments of modules."),
+    llvm::cl::init(false), llvm::cl::cat(DependencyScannerCategory));
+
 llvm::cl::opt<unsigned>
     NumThreads("j", llvm::cl::Optional,
                llvm::cl::desc("Number of worker threads to use (default: use "
@@ -197,6 +202,25 @@ llvm::cl::opt<bool> SkipExcludedPPRanges(
 llvm::cl::opt<std::string> ModuleName(
     "module-name", llvm::cl::Optional,
     llvm::cl::desc("the module of which the dependencies are to be computed"),
+    llvm::cl::cat(DependencyScannerCategory));
+
+enum ResourceDirRecipeKind {
+  RDRK_ModifyCompilerPath,
+  RDRK_InvokeCompiler,
+};
+
+static llvm::cl::opt<ResourceDirRecipeKind> ResourceDirRecipe(
+    "resource-dir-recipe",
+    llvm::cl::desc("How to produce missing '-resource-dir' argument"),
+    llvm::cl::values(
+        clEnumValN(RDRK_ModifyCompilerPath, "modify-compiler-path",
+                   "Construct the resource directory from the compiler path in "
+                   "the compilation database. This assumes it's part of the "
+                   "same toolchain as this clang-scan-deps. (default)"),
+        clEnumValN(RDRK_InvokeCompiler, "invoke-compiler",
+                   "Invoke the compiler with '-print-resource-dir' and use the "
+                   "reported path as the resource directory. (deprecated)")),
+    llvm::cl::init(RDRK_ModifyCompilerPath),
     llvm::cl::cat(DependencyScannerCategory));
 
 llvm::cl::opt<bool> Verbose("v", llvm::cl::Optional,
@@ -272,14 +296,13 @@ public:
       Modules.insert(I, {{MD.ID, InputIndex}, std::move(MD)});
     }
 
-    ID.AdditionalCommandLine =
-        GenerateModulesPathArgs
-            ? FD.getAdditionalArgs(
-                  [&](ModuleID MID) { return lookupPCMPath(MID); },
-                  [&](ModuleID MID) -> const ModuleDeps & {
-                    return lookupModuleDeps(MID);
-                  })
-            : FD.getAdditionalArgsWithoutModulePaths();
+    ID.CommandLine = GenerateModulesPathArgs
+                         ? FD.getCommandLine(
+                               [&](ModuleID MID) { return lookupPCMPath(MID); },
+                               [&](ModuleID MID) -> const ModuleDeps & {
+                                 return lookupModuleDeps(MID);
+                               })
+                         : FD.getCommandLineWithoutModulePaths();
 
     Inputs.push_back(std::move(ID));
   }
@@ -329,7 +352,7 @@ public:
           {"clang-context-hash", I.ContextHash},
           {"file-deps", I.FileDeps},
           {"clang-module-deps", toJSONSorted(I.ModuleDeps)},
-          {"command-line", I.AdditionalCommandLine},
+          {"command-line", I.CommandLine},
       };
       TUs.push_back(std::move(O));
     }
@@ -357,7 +380,7 @@ private:
     SmallString<256> ExplicitPCMPath(
         !ModuleFilesDir.empty()
             ? ModuleFilesDir
-            : MD.Invocation.getHeaderSearchOpts().ModuleCachePath);
+            : MD.BuildInvocation.getHeaderSearchOpts().ModuleCachePath);
     llvm::sys::path::append(ExplicitPCMPath, MD.ID.ContextHash, Filename);
     return std::string(ExplicitPCMPath);
   }
@@ -391,7 +414,7 @@ private:
     std::string ContextHash;
     std::vector<std::string> FileDeps;
     std::vector<ModuleID> ModuleDeps;
-    std::vector<std::string> AdditionalCommandLine;
+    std::vector<std::string> CommandLine;
   };
 
   std::mutex Lock;
@@ -446,7 +469,7 @@ int main(int argc, const char **argv) {
   AdjustingCompilations->appendArgumentsAdjuster(
       [&ResourceDirCache](const tooling::CommandLineArguments &Args,
                           StringRef FileName) {
-        std::string LastO = "";
+        std::string LastO;
         bool HasResourceDir = false;
         bool ClangCLMode = false;
         auto FlagsEnd = llvm::find(Args, "--");
@@ -456,7 +479,7 @@ int main(int argc, const char **argv) {
               llvm::is_contained(Args, "--driver-mode=cl");
 
           // Reverse scan, starting at the end or at the element before "--".
-          auto R = llvm::make_reverse_iterator(FlagsEnd);
+          auto R = std::make_reverse_iterator(FlagsEnd);
           for (auto I = R, E = Args.rend(); I != E; ++I) {
             StringRef Arg = *I;
             if (ClangCLMode) {
@@ -490,7 +513,7 @@ int main(int argc, const char **argv) {
           AdjustedArgs.push_back("/clang:" + LastO);
         }
 
-        if (!HasResourceDir) {
+        if (!HasResourceDir && ResourceDirRecipe == RDRK_InvokeCompiler) {
           StringRef ResourceDir =
               ResourceDirCache.findResourceDir(Args, ClangCLMode);
           if (!ResourceDir.empty()) {
@@ -507,7 +530,7 @@ int main(int argc, const char **argv) {
   SharedStream DependencyOS(llvm::outs());
 
   DependencyScanningService Service(ScanMode, Format, ReuseFileManager,
-                                    SkipExcludedPPRanges);
+                                    SkipExcludedPPRanges, OptimizeArgs);
   llvm::ThreadPool Pool(llvm::hardware_concurrency(NumThreads));
   std::vector<std::unique_ptr<DependencyScanningTool>> WorkerTools;
   for (unsigned I = 0; I < Pool.getThreadCount(); ++I)

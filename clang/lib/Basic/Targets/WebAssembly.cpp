@@ -60,7 +60,7 @@ bool WebAssemblyTargetInfo::hasFeature(StringRef Feature) const {
 }
 
 bool WebAssemblyTargetInfo::isValidCPUName(StringRef Name) const {
-  return llvm::find(ValidCPUNames, Name) != std::end(ValidCPUNames);
+  return llvm::is_contained(ValidCPUNames, Name);
 }
 
 void WebAssemblyTargetInfo::fillValidCPUList(
@@ -255,11 +255,13 @@ ArrayRef<Builtin::Info> WebAssemblyTargetInfo::getTargetBuiltins() const {
 
 void WebAssemblyTargetInfo::adjust(DiagnosticsEngine &Diags,
                                    LangOptions &Opts) {
+  TargetInfo::adjust(Diags, Opts);
   // If the Atomics feature isn't available, turn off POSIXThreads and
   // ThreadModel, so that we don't predefine _REENTRANT or __STDCPP_THREADS__.
   if (!HasAtomics) {
     Opts.POSIXThreads = false;
     Opts.setThreadModel(LangOptions::ThreadModelKind::Single);
+    Opts.ThreadsafeStatics = false;
   }
 }
 

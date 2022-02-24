@@ -78,6 +78,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -329,18 +330,20 @@ static bool doesStringMatchAnyRegex(StringRef Str,
 
     std::string Err;
     if (!R.isValid(Err))
-      report_fatal_error("invalid regex given as input to polly: " + Err, true);
+      report_fatal_error(Twine("invalid regex given as input to polly: ") + Err,
+                         true);
 
     if (R.match(Str))
       return true;
   }
   return false;
 }
+
 //===----------------------------------------------------------------------===//
 // ScopDetection.
 
 ScopDetection::ScopDetection(const DominatorTree &DT, ScalarEvolution &SE,
-                             LoopInfo &LI, RegionInfo &RI, AliasAnalysis &AA,
+                             LoopInfo &LI, RegionInfo &RI, AAResults &AA,
                              OptimizationRemarkEmitter &ORE)
     : DT(DT), SE(SE), LI(LI), RI(RI), AA(AA), ORE(ORE) {}
 
@@ -728,7 +731,7 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
     case FMRB_OnlyReadsArgumentPointees:
     case FMRB_OnlyAccessesArgumentPointees:
     case FMRB_OnlyWritesArgumentPointees:
-      for (const auto &Arg : CI.arg_operands()) {
+      for (const auto &Arg : CI.args()) {
         if (!Arg->getType()->isPointerTy())
           continue;
 
@@ -1165,7 +1168,7 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
       // as invariant, we use fixed-point iteration method here i.e we iterate
       // over the alias set for arbitrary number of times until it is safe to
       // assume that all the invariant loads have been detected
-      while (1) {
+      while (true) {
         const unsigned int VariantSize = VariantLS.size(),
                            InvariantSize = InvariantLS.size();
 
@@ -1469,7 +1472,7 @@ bool ScopDetection::isErrorBlock(llvm::BasicBlock &BB, const llvm::Region &R) {
   if (!PollyAllowErrorBlocks)
     return false;
 
-  auto It = ErrorBlockCache.insert({{&BB, &R}, false});
+  auto It = ErrorBlockCache.insert({std::make_pair(&BB, &R), false});
   if (!It.second)
     return It.first->getSecond();
 

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/Pragma.h"
+#include "clang/Basic/CLWarnings.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticLex.h"
 #include "clang/Basic/FileManager.h"
@@ -262,7 +263,12 @@ void Preprocessor::Handle_Pragma(Token &Tok) {
   }
 
   SourceLocation RParenLoc = Tok.getLocation();
-  std::string StrVal = getSpelling(StrTok);
+  bool Invalid = false;
+  std::string StrVal = getSpelling(StrTok, &Invalid);
+  if (Invalid) {
+    Diag(PragmaLoc, diag::err__Pragma_malformed);
+    return;
+  }
 
   // The _Pragma is lexically sound.  Destringize according to C11 6.10.9.1:
   // "The string literal is destringized by deleting any encoding prefix,
@@ -525,9 +531,8 @@ static llvm::Optional<Token> LexHeader(Preprocessor &PP,
     return llvm::None;
 
   // Search include directories for this file.
-  const DirectoryLookup *CurDir;
   File = PP.LookupFile(FilenameTok.getLocation(), Filename, isAngled, nullptr,
-                       nullptr, CurDir, nullptr, nullptr, nullptr, nullptr,
+                       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                        nullptr);
   if (!File) {
     if (!SuppressIncludeNotFoundError)
@@ -1413,12 +1418,15 @@ struct PragmaWarningHandler : public PragmaHandler {
           return;
         }
       }
+      PP.getDiagnostics().pushMappings(DiagLoc);
       if (Callbacks)
         Callbacks->PragmaWarningPush(DiagLoc, Level);
     } else if (II && II->isStr("pop")) {
       // #pragma warning( pop )
       PP.Lex(Tok);
-      if (Callbacks)
+      if (!PP.getDiagnostics().popMappings(DiagLoc))
+        PP.Diag(Tok, diag::warn_pragma_diagnostic_cannot_pop);
+      else if (Callbacks)
         Callbacks->PragmaWarningPop(DiagLoc);
     } else {
       // #pragma warning( warning-specifier : warning-number-list
@@ -1482,6 +1490,22 @@ struct PragmaWarningHandler : public PragmaHandler {
           }
           Ids.push_back(int(Value));
         }
+
+        // Only act on disable for now.
+        diag::Severity SV = diag::Severity();
+        if (Specifier == PPCallbacks::PWS_Disable)
+          SV = diag::Severity::Ignored;
+        if (SV != diag::Severity())
+          for (int Id : Ids) {
+            if (auto Group = diagGroupFromCLWarningID(Id)) {
+              bool unknownDiag = PP.getDiagnostics().setSeverityForGroup(
+                  diag::Flavor::WarningOrError, *Group, SV, DiagLoc);
+              assert(!unknownDiag &&
+                     "wd table should only contain known diags");
+              (void)unknownDiag;
+            }
+          }
+
         if (Callbacks)
           Callbacks->PragmaWarning(DiagLoc, Specifier, Ids);
 
@@ -1732,7 +1756,7 @@ struct PragmaModuleBeginHandler : public PragmaHandler {
     // Find the module we're entering. We require that a module map for it
     // be loaded or implicitly loadable.
     auto &HSI = PP.getHeaderSearchInfo();
-    Module *M = HSI.lookupModule(Current);
+    Module *M = HSI.lookupModule(Current, ModuleName.front().second);
     if (!M) {
       PP.Diag(ModuleName.front().second,
               diag::err_pp_module_begin_no_module_map) << Current;

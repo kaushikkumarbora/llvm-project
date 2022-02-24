@@ -67,20 +67,20 @@ define <vscale x 14 x i1> @extract_nxv14i1_nxv28i1_14(<vscale x 28 x i1> %in) {
 ; CHECK-NEXT:    .cfi_offset w29, -16
 ; CHECK-NEXT:    punpkhi p2.h, p1.b
 ; CHECK-NEXT:    punpklo p1.h, p1.b
-; CHECK-NEXT:    punpkhi p0.h, p0.b
 ; CHECK-NEXT:    punpklo p2.h, p2.b
-; CHECK-NEXT:    punpkhi p3.h, p1.b
 ; CHECK-NEXT:    punpkhi p0.h, p0.b
-; CHECK-NEXT:    punpklo p1.h, p1.b
+; CHECK-NEXT:    punpkhi p3.h, p1.b
 ; CHECK-NEXT:    punpkhi p4.h, p2.b
+; CHECK-NEXT:    punpklo p1.h, p1.b
 ; CHECK-NEXT:    punpklo p2.h, p2.b
 ; CHECK-NEXT:    punpkhi p5.h, p3.b
+; CHECK-NEXT:    uzp1 p4.s, p4.s, p0.s
 ; CHECK-NEXT:    punpkhi p0.h, p0.b
 ; CHECK-NEXT:    punpklo p3.h, p3.b
 ; CHECK-NEXT:    uzp1 p2.s, p5.s, p2.s
 ; CHECK-NEXT:    punpkhi p5.h, p1.b
 ; CHECK-NEXT:    punpklo p1.h, p1.b
-; CHECK-NEXT:    uzp1 p4.s, p4.s, p0.s
+; CHECK-NEXT:    punpkhi p0.h, p0.b
 ; CHECK-NEXT:    uzp1 p3.s, p5.s, p3.s
 ; CHECK-NEXT:    uzp1 p0.s, p0.s, p1.s
 ; CHECK-NEXT:    uzp1 p1.h, p2.h, p4.h
@@ -440,6 +440,39 @@ define <vscale x 4 x i8> @extract_nxv4i8_nxv12i8_8(<vscale x 12 x i8> %in) {
 declare <vscale x 4 x i8> @llvm.experimental.vector.extract.nxv4i8.nxv12i8(<vscale x 12 x i8>, i64)
 
 ;
+; Extract i8 vector that needs both widening + promotion from one that needs widening.
+; (nxv6i8 -> nxv8i8 -> nxv8i16)
+;
+define <vscale x 6 x i8> @extract_nxv6i8_nxv12i8_0(<vscale x 12 x i8> %in) {
+; CHECK-LABEL: extract_nxv6i8_nxv12i8_0:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    uunpklo z0.h, z0.b
+; CHECK-NEXT:    ret
+  %res = call <vscale x 6 x i8> @llvm.experimental.vector.extract.nxv6i8.nxv12i8(<vscale x 12 x i8> %in, i64 0)
+  ret <vscale x 6 x i8> %res
+}
+
+define <vscale x 6 x i8> @extract_nxv6i8_nxv12i8_6(<vscale x 12 x i8> %in) {
+; CHECK-LABEL: extract_nxv6i8_nxv12i8_6:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    uunpkhi z1.h, z0.b
+; CHECK-NEXT:    uunpklo z0.h, z0.b
+; CHECK-NEXT:    uunpklo z1.s, z1.h
+; CHECK-NEXT:    uunpkhi z0.s, z0.h
+; CHECK-NEXT:    uunpkhi z2.d, z1.s
+; CHECK-NEXT:    uunpklo z1.d, z1.s
+; CHECK-NEXT:    uunpkhi z0.d, z0.s
+; CHECK-NEXT:    uzp1 z2.s, z2.s, z0.s
+; CHECK-NEXT:    uzp1 z0.s, z0.s, z1.s
+; CHECK-NEXT:    uzp1 z0.h, z0.h, z2.h
+; CHECK-NEXT:    ret
+  %res = call <vscale x 6 x i8> @llvm.experimental.vector.extract.nxv6i8.nxv12i8(<vscale x 12 x i8> %in, i64 6)
+  ret <vscale x 6 x i8> %res
+}
+
+declare <vscale x 6 x i8> @llvm.experimental.vector.extract.nxv6i8.nxv12i8(<vscale x 12 x i8>, i64)
+
+;
 ; Extract half i8 vector that needs promotion from one that needs splitting.
 ;
 define <vscale x 8 x i8> @extract_nxv8i8_nxv32i8_0(<vscale x 32 x i8> %in) {
@@ -518,69 +551,69 @@ define <vscale x 14 x i8> @extract_nxv14i8_nxv28i8_14(<vscale x 28 x i8> %in) {
 ; CHECK-LABEL: extract_nxv14i8_nxv28i8_14:
 ; CHECK:       // %bb.0:
 ; CHECK-NEXT:    uunpkhi z0.h, z0.b
-; CHECK-NEXT:    uunpkhi z0.s, z0.h
-; CHECK-NEXT:    uunpkhi z0.d, z0.s
-; CHECK-NEXT:    uzp1 z0.s, z0.s, z0.s
-; CHECK-NEXT:    uzp1 z0.h, z0.h, z0.h
-; CHECK-NEXT:    uzp1 z0.b, z0.b, z0.b
 ; CHECK-NEXT:    uunpklo z2.h, z1.b
-; CHECK-NEXT:    uunpklo z0.h, z0.b
-; CHECK-NEXT:    uunpklo z3.s, z2.h
-; CHECK-NEXT:    uunpklo z5.s, z0.h
-; CHECK-NEXT:    uunpklo z4.d, z3.s
-; CHECK-NEXT:    uunpklo z5.d, z5.s
-; CHECK-NEXT:    uzp1 z4.s, z5.s, z4.s
 ; CHECK-NEXT:    uunpkhi z0.s, z0.h
-; CHECK-NEXT:    uzp1 z0.h, z4.h, z0.h
-; CHECK-NEXT:    uzp1 z0.b, z0.b, z0.b
-; CHECK-NEXT:    uunpklo z0.h, z0.b
-; CHECK-NEXT:    uunpkhi z4.s, z0.h
-; CHECK-NEXT:    uunpkhi z3.d, z3.s
+; CHECK-NEXT:    uunpklo z4.s, z2.h
+; CHECK-NEXT:    uunpkhi z0.d, z0.s
+; CHECK-NEXT:    uunpklo z5.d, z4.s
+; CHECK-NEXT:    uzp1 z0.s, z0.s, z0.s
 ; CHECK-NEXT:    uunpkhi z4.d, z4.s
-; CHECK-NEXT:    uzp1 z3.s, z3.s, z4.s
-; CHECK-NEXT:    uunpklo z0.s, z0.h
-; CHECK-NEXT:    uzp1 z0.h, z0.h, z3.h
+; CHECK-NEXT:    uzp1 z0.h, z0.h, z0.h
+; CHECK-NEXT:    uunpkhi z2.s, z2.h
+; CHECK-NEXT:    uzp1 z0.b, z0.b, z0.b
+; CHECK-NEXT:    uunpkhi z1.h, z1.b
+; CHECK-NEXT:    uunpklo z0.h, z0.b
+; CHECK-NEXT:    uunpklo z1.s, z1.h
+; CHECK-NEXT:    uunpklo z3.s, z0.h
+; CHECK-NEXT:    uunpkhi z0.s, z0.h
+; CHECK-NEXT:    uunpklo z3.d, z3.s
+; CHECK-NEXT:    uzp1 z3.s, z3.s, z5.s
+; CHECK-NEXT:    uzp1 z0.h, z3.h, z0.h
 ; CHECK-NEXT:    uzp1 z0.b, z0.b, z0.b
 ; CHECK-NEXT:    uunpklo z0.h, z0.b
-; CHECK-NEXT:    uunpkhi z2.s, z2.h
 ; CHECK-NEXT:    uunpkhi z3.s, z0.h
-; CHECK-NEXT:    uunpklo z5.d, z2.s
-; CHECK-NEXT:    uunpklo z3.d, z3.s
 ; CHECK-NEXT:    uunpklo z0.s, z0.h
-; CHECK-NEXT:    uzp1 z3.s, z3.s, z5.s
+; CHECK-NEXT:    uunpkhi z3.d, z3.s
+; CHECK-NEXT:    uzp1 z3.s, z4.s, z3.s
+; CHECK-NEXT:    uunpklo z4.d, z2.s
+; CHECK-NEXT:    uzp1 z0.h, z0.h, z3.h
+; CHECK-NEXT:    uunpkhi z2.d, z2.s
+; CHECK-NEXT:    uzp1 z0.b, z0.b, z0.b
+; CHECK-NEXT:    uunpklo z0.h, z0.b
+; CHECK-NEXT:    uunpkhi z3.s, z0.h
+; CHECK-NEXT:    uunpklo z0.s, z0.h
+; CHECK-NEXT:    uunpklo z3.d, z3.s
+; CHECK-NEXT:    uzp1 z3.s, z3.s, z4.s
 ; CHECK-NEXT:    uzp1 z0.h, z0.h, z3.h
 ; CHECK-NEXT:    uzp1 z3.b, z0.b, z0.b
 ; CHECK-NEXT:    uunpkhi z3.h, z3.b
-; CHECK-NEXT:    uunpklo z5.s, z3.h
-; CHECK-NEXT:    uunpkhi z2.d, z2.s
-; CHECK-NEXT:    uunpkhi z5.d, z5.s
+; CHECK-NEXT:    uunpklo z4.s, z3.h
 ; CHECK-NEXT:    uunpkhi z3.s, z3.h
-; CHECK-NEXT:    uzp1 z2.s, z2.s, z5.s
-; CHECK-NEXT:    uzp1 z2.h, z2.h, z3.h
-; CHECK-NEXT:    uzp1 z2.b, z0.b, z2.b
-; CHECK-NEXT:    uunpkhi z1.h, z1.b
-; CHECK-NEXT:    uunpkhi z2.h, z2.b
-; CHECK-NEXT:    uunpklo z1.s, z1.h
-; CHECK-NEXT:    uunpklo z3.s, z2.h
+; CHECK-NEXT:    uunpkhi z4.d, z4.s
+; CHECK-NEXT:    uzp1 z2.s, z2.s, z4.s
 ; CHECK-NEXT:    uunpklo z4.d, z1.s
-; CHECK-NEXT:    uunpklo z3.d, z3.s
+; CHECK-NEXT:    uzp1 z2.h, z2.h, z3.h
+; CHECK-NEXT:    uunpkhi z1.d, z1.s
+; CHECK-NEXT:    uzp1 z2.b, z0.b, z2.b
+; CHECK-NEXT:    uunpkhi z2.h, z2.b
+; CHECK-NEXT:    uunpklo z3.s, z2.h
 ; CHECK-NEXT:    uunpkhi z2.s, z2.h
+; CHECK-NEXT:    uunpklo z3.d, z3.s
 ; CHECK-NEXT:    uzp1 z3.s, z3.s, z4.s
 ; CHECK-NEXT:    uzp1 z2.h, z3.h, z2.h
 ; CHECK-NEXT:    uzp1 z2.b, z0.b, z2.b
 ; CHECK-NEXT:    uunpkhi z2.h, z2.b
 ; CHECK-NEXT:    uunpkhi z3.s, z2.h
-; CHECK-NEXT:    uunpkhi z1.d, z1.s
-; CHECK-NEXT:    uunpkhi z3.d, z3.s
 ; CHECK-NEXT:    uunpklo z2.s, z2.h
+; CHECK-NEXT:    uunpkhi z3.d, z3.s
 ; CHECK-NEXT:    uzp1 z1.s, z1.s, z3.s
 ; CHECK-NEXT:    uzp1 z1.h, z2.h, z1.h
 ; CHECK-NEXT:    uzp1 z1.b, z0.b, z1.b
 ; CHECK-NEXT:    uunpkhi z1.h, z1.b
 ; CHECK-NEXT:    uunpkhi z2.s, z1.h
+; CHECK-NEXT:    uunpklo z1.s, z1.h
 ; CHECK-NEXT:    uunpklo z2.d, z2.s
 ; CHECK-NEXT:    uzp1 z2.s, z2.s, z0.s
-; CHECK-NEXT:    uunpklo z1.s, z1.h
 ; CHECK-NEXT:    uzp1 z1.h, z1.h, z2.h
 ; CHECK-NEXT:    uzp1 z0.b, z0.b, z1.b
 ; CHECK-NEXT:    ret
@@ -981,3 +1014,63 @@ define <vscale x 4 x bfloat> @extract_nxv4bf16_nxv16bf16_12(<vscale x 16 x bfloa
 
 declare <vscale x 4 x bfloat> @llvm.experimental.vector.extract.nxv4bf16.nxv16bf16(<vscale x 16 x bfloat>, i64)
 
+
+;
+; Extract from a splat
+;
+define <vscale x 2 x float> @extract_nxv2f32_nxv4f32_splat(float %f) {
+; CHECK-LABEL: extract_nxv2f32_nxv4f32_splat:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    // kill: def $s0 killed $s0 def $z0
+; CHECK-NEXT:    mov z0.s, s0
+; CHECK-NEXT:    ret
+  %ins = insertelement <vscale x 4 x float> poison, float %f, i32 0
+  %splat = shufflevector <vscale x 4 x float> %ins, <vscale x 4 x float> poison, <vscale x 4 x i32> zeroinitializer
+  %ext = call <vscale x 2 x float> @llvm.experimental.vector.extract.nxv2f32.nxv4f32(<vscale x 4 x float> %splat, i64 0)
+  ret <vscale x 2 x float> %ext
+}
+
+define <vscale x 2 x float> @extract_nxv2f32_nxv4f32_splat_const() {
+; CHECK-LABEL: extract_nxv2f32_nxv4f32_splat_const:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    fmov z0.s, #1.00000000
+; CHECK-NEXT:    ret
+  %ins = insertelement <vscale x 4 x float> poison, float 1.0, i32 0
+  %splat = shufflevector <vscale x 4 x float> %ins, <vscale x 4 x float> poison, <vscale x 4 x i32> zeroinitializer
+  %ext = call <vscale x 2 x float> @llvm.experimental.vector.extract.nxv2f32.nxv4f32(<vscale x 4 x float> %splat, i64 0)
+  ret <vscale x 2 x float> %ext
+}
+
+define <vscale x 4 x i32> @extract_nxv4i32_nxv8i32_splat_const() {
+; CHECK-LABEL: extract_nxv4i32_nxv8i32_splat_const:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    mov z0.s, #1 // =0x1
+; CHECK-NEXT:    ret
+  %ins = insertelement <vscale x 8 x i32> poison, i32 1, i32 0
+  %splat = shufflevector <vscale x 8 x i32> %ins, <vscale x 8 x i32> poison, <vscale x 8 x i32> zeroinitializer
+  %ext = call <vscale x 4 x i32> @llvm.experimental.vector.extract.nxv4i32.nxv8i32(<vscale x 8 x i32> %splat, i64 0)
+  ret <vscale x 4 x i32> %ext
+}
+
+define <vscale x 2 x i1> @extract_nxv2i1_nxv16i1_all_ones() {
+; CHECK-LABEL: extract_nxv2i1_nxv16i1_all_ones:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    ptrue p0.d
+; CHECK-NEXT:    ret
+  %ins = insertelement <vscale x 16 x i1> poison, i1 1, i32 0
+  %splat = shufflevector <vscale x 16 x i1> %ins, <vscale x 16 x i1> poison, <vscale x 16 x i32> zeroinitializer
+  %ext = call <vscale x 2 x i1> @llvm.experimental.vector.extract.nxv2i1.nxv16i1(<vscale x 16 x i1> %splat, i64 0)
+  ret <vscale x 2 x i1> %ext
+}
+
+define <vscale x 2 x i1> @extract_nxv2i1_nxv16i1_all_zero() {
+; CHECK-LABEL: extract_nxv2i1_nxv16i1_all_zero:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    pfalse p0.b
+; CHECK-NEXT:    ret
+  %ext = call <vscale x 2 x i1> @llvm.experimental.vector.extract.nxv2i1.nxv16i1(<vscale x 16 x i1> zeroinitializer, i64 0)
+  ret <vscale x 2 x i1> %ext
+}
+
+declare <vscale x 2 x float> @llvm.experimental.vector.extract.nxv2f32.nxv4f32(<vscale x 4 x float>, i64)
+declare <vscale x 4 x i32> @llvm.experimental.vector.extract.nxv4i32.nxv8i32(<vscale x 8 x i32>, i64)

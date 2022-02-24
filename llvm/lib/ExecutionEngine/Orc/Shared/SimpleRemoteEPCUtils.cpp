@@ -43,8 +43,8 @@ const char *DispatchFnName = "__llvm_orc_SimpleRemoteEPC_dispatch_fn";
 
 } // end namespace SimpleRemoteEPCDefaultBootstrapSymbolNames
 
-SimpleRemoteEPCTransportClient::~SimpleRemoteEPCTransportClient() {}
-SimpleRemoteEPCTransport::~SimpleRemoteEPCTransport() {}
+SimpleRemoteEPCTransportClient::~SimpleRemoteEPCTransportClient() = default;
+SimpleRemoteEPCTransport::~SimpleRemoteEPCTransport() = default;
 
 Expected<std::unique_ptr<FDSimpleRemoteEPCTransport>>
 FDSimpleRemoteEPCTransport::Create(SimpleRemoteEPCTransportClient &C, int InFD,
@@ -238,6 +238,11 @@ void FDSimpleRemoteEPCTransport::listenLoop() {
     }
   } while (true);
 
+  // Attempt to close FDs, set Disconnected to true so that subsequent
+  // sendMessage calls fail.
+  disconnect();
+
+  // Call up to the client to handle the disconnection.
   C.handleDisconnect(std::move(Err));
 }
 

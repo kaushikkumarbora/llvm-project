@@ -19,6 +19,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstBuilder.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCAsmParserExtension.h"
@@ -26,10 +27,10 @@
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SMLoc.h"
-#include "llvm/Support/TargetRegistry.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -40,13 +41,15 @@
 
 using namespace llvm;
 
-// Return true if Expr is in the range [MinValue, MaxValue].
-static bool inRange(const MCExpr *Expr, int64_t MinValue, int64_t MaxValue) {
+// Return true if Expr is in the range [MinValue, MaxValue]. If AllowSymbol
+// is true any MCExpr is accepted (address displacement).
+static bool inRange(const MCExpr *Expr, int64_t MinValue, int64_t MaxValue,
+                    bool AllowSymbol = false) {
   if (auto *CE = dyn_cast<MCConstantExpr>(Expr)) {
     int64_t Value = CE->getValue();
     return Value >= MinValue && Value <= MaxValue;
   }
-  return false;
+  return AllowSymbol;
 }
 
 namespace {
@@ -265,10 +268,10 @@ public:
     return isMem(MemKind) && Mem.RegKind == RegKind;
   }
   bool isMemDisp12(MemoryKind MemKind, RegisterKind RegKind) const {
-    return isMem(MemKind, RegKind) && inRange(Mem.Disp, 0, 0xfff);
+    return isMem(MemKind, RegKind) && inRange(Mem.Disp, 0, 0xfff, true);
   }
   bool isMemDisp20(MemoryKind MemKind, RegisterKind RegKind) const {
-    return isMem(MemKind, RegKind) && inRange(Mem.Disp, -524288, 524287);
+    return isMem(MemKind, RegKind) && inRange(Mem.Disp, -524288, 524287, true);
   }
   bool isMemDisp12Len4(RegisterKind RegKind) const {
     return isMemDisp12(BDLMem, RegKind) && inRange(Mem.Length.Imm, 1, 0x10);

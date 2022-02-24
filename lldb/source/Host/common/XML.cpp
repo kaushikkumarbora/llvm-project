@@ -130,22 +130,25 @@ XMLNode XMLNode::GetChild() const {
 #endif
 }
 
-llvm::StringRef XMLNode::GetAttributeValue(const char *name,
-                                           const char *fail_value) const {
-  const char *attr_value = nullptr;
+std::string XMLNode::GetAttributeValue(const char *name,
+                                       const char *fail_value) const {
+  std::string attr_value;
 #if LLDB_ENABLE_LIBXML2
-
-  if (IsValid())
-    attr_value = (const char *)xmlGetProp(m_node, (const xmlChar *)name);
-  else
-    attr_value = fail_value;
+  if (IsValid()) {
+    xmlChar *value = xmlGetProp(m_node, (const xmlChar *)name);
+    if (value) {
+      attr_value = (const char *)value;
+      xmlFree(value);
+    }
+  } else {
+    if (fail_value)
+      attr_value = fail_value;
+  }
 #else
-  attr_value = fail_value;
+  if (fail_value)
+    attr_value = fail_value;
 #endif
-  if (attr_value)
-    return llvm::StringRef(attr_value);
-  else
-    return llvm::StringRef();
+  return attr_value;
 }
 
 bool XMLNode::GetAttributeValueAsUnsigned(const char *name, uint64_t &value,
@@ -448,9 +451,7 @@ bool ApplePropertyList::ExtractStringFromValueNode(const XMLNode &node,
 
 #if LLDB_ENABLE_LIBXML2
 
-namespace {
-
-StructuredData::ObjectSP CreatePlistValue(XMLNode node) {
+static StructuredData::ObjectSP CreatePlistValue(XMLNode node) {
   llvm::StringRef element_name = node.GetName();
   if (element_name == "array") {
     std::shared_ptr<StructuredData::Array> array_sp(
@@ -502,7 +503,6 @@ StructuredData::ObjectSP CreatePlistValue(XMLNode node) {
     return StructuredData::ObjectSP(new StructuredData::Boolean(false));
   }
   return StructuredData::ObjectSP(new StructuredData::Null());
-}
 }
 #endif
 

@@ -12,7 +12,6 @@
 #include "Target.h"
 #include "lld/Common/ErrorHandler.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Object/ELF.h"
 #include "llvm/Support/Endian.h"
 
 using namespace llvm;
@@ -146,7 +145,7 @@ RelExpr Hexagon::getRelExpr(RelType type, const Symbol &s,
   case R_HEX_IE_GOT_32_6_X:
   case R_HEX_IE_GOT_HI16:
   case R_HEX_IE_GOT_LO16:
-    config->hasStaticTlsModel = true;
+    config->hasTlsIe = true;
     return R_GOTPLT;
   case R_HEX_TPREL_11_X:
   case R_HEX_TPREL_16:

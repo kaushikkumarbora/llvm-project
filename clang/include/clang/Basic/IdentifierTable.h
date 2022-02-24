@@ -43,10 +43,27 @@ class SourceLocation;
 enum class ReservedIdentifierStatus {
   NotReserved = 0,
   StartsWithUnderscoreAtGlobalScope,
+  StartsWithUnderscoreAndIsExternC,
   StartsWithDoubleUnderscore,
   StartsWithUnderscoreFollowedByCapitalLetter,
   ContainsDoubleUnderscore,
 };
+
+/// Determine whether an identifier is reserved for use as a name at global
+/// scope. Such identifiers might be implementation-specific global functions
+/// or variables.
+inline bool isReservedAtGlobalScope(ReservedIdentifierStatus Status) {
+  return Status != ReservedIdentifierStatus::NotReserved;
+}
+
+/// Determine whether an identifier is reserved in all contexts. Such
+/// identifiers might be implementation-specific keywords or macros, for
+/// example.
+inline bool isReservedInAllContexts(ReservedIdentifierStatus Status) {
+  return Status != ReservedIdentifierStatus::NotReserved &&
+         Status != ReservedIdentifierStatus::StartsWithUnderscoreAtGlobalScope &&
+         Status != ReservedIdentifierStatus::StartsWithUnderscoreAndIsExternC;
+}
 
 /// A simple pair of identifier info and location.
 using IdentifierLocPair = std::pair<IdentifierInfo *, SourceLocation>;
@@ -440,6 +457,10 @@ public:
   /// Determine whether \p this is a name reserved for the implementation (C99
   /// 7.1.3, C++ [lib.global.names]).
   ReservedIdentifierStatus isReserved(const LangOptions &LangOpts) const;
+
+  /// If the identifier is an "uglified" reserved name, return a cleaned form.
+  /// e.g. _Foo => Foo. Otherwise, just returns the name.
+  StringRef deuglifiedName() const;
 
   /// Provide less than operator for lexicographical sorting.
   bool operator<(const IdentifierInfo &RHS) const {

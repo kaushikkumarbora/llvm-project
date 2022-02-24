@@ -538,8 +538,11 @@ public:
   ///
   /// We model the global module fragment as a submodule of the module
   /// interface unit. Unfortunately, we can't create the module interface
-  /// unit's Module until later, because we don't know what it will be called.
-  Module *createGlobalModuleFragmentForModuleUnit(SourceLocation Loc);
+  /// unit's Module until later, because we don't know what it will be called
+  /// usually. See C++20 [module.unit]/7.2 for the case we could know its
+  /// parent.
+  Module *createGlobalModuleFragmentForModuleUnit(SourceLocation Loc,
+                                                  Module *Parent = nullptr);
 
   /// Create a global module fragment for a C++ module interface unit.
   Module *createPrivateModuleFragmentForInterfaceUnit(Module *Parent,
@@ -579,6 +582,12 @@ public:
     assert(!ExistingModule->Parent && "expected top-level module");
     assert(ModuleScopeIDs.count(ExistingModule) && "unknown module");
     return ModuleScopeIDs[ExistingModule] < CurrentModuleScopeID;
+  }
+
+  /// Check whether a framework module can be inferred in the given directory.
+  bool canInferFrameworkModule(const DirectoryEntry *Dir) const {
+    auto It = InferredDirectories.find(Dir);
+    return It != InferredDirectories.end() && It->getSecond().InferModules;
   }
 
   /// Retrieve the module map file containing the definition of the given

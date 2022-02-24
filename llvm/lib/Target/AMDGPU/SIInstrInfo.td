@@ -255,6 +255,14 @@ def SIdenorm_mode : SDNode<"AMDGPUISD::DENORM_MODE",
   [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]
 >;
 
+def SIfptrunc_round_upward : SDNode<"AMDGPUISD::FPTRUNC_ROUND_UPWARD",
+  SDTFPRoundOp
+>;
+
+def SIfptrunc_round_downward : SDNode<"AMDGPUISD::FPTRUNC_ROUND_DOWNWARD",
+  SDTFPRoundOp
+>;
+
 //===----------------------------------------------------------------------===//
 // ValueType helpers
 //===----------------------------------------------------------------------===//
@@ -291,19 +299,10 @@ class isPackedType<ValueType SrcVT> {
 // PatFrags for global memory operations
 //===----------------------------------------------------------------------===//
 
-foreach as = [ "global", "flat", "constant", "local", "private", "region" ] in {
-let AddressSpaces = !cast<AddressSpaceList>("LoadAddress_"#as).AddrSpaces in {
-
-
-defm atomic_inc_#as : binary_atomic_op<SIatomic_inc>;
-defm atomic_dec_#as : binary_atomic_op<SIatomic_dec>;
-defm atomic_load_fmin_#as : binary_atomic_op<SIatomic_fmin, 0>;
-defm atomic_load_fmax_#as : binary_atomic_op<SIatomic_fmax, 0>;
-
-
-} // End let AddressSpaces = ...
-} // End foreach AddrSpace
-
+defm atomic_inc : binary_atomic_op_all_as<SIatomic_inc>;
+defm atomic_dec : binary_atomic_op_all_as<SIatomic_dec>;
+defm atomic_load_fmin : binary_atomic_op_all_as<SIatomic_fmin, 0>;
+defm atomic_load_fmax : binary_atomic_op_all_as<SIatomic_fmax, 0>;
 
 //===----------------------------------------------------------------------===//
 // SDNodes PatFrags for loads/stores with a glue input.
@@ -331,6 +330,18 @@ def unindexedload_glue : PatFrag <(ops node:$ptr), (AMDGPUld_glue node:$ptr)> {
 def load_glue : PatFrag <(ops node:$ptr), (unindexedload_glue node:$ptr)> {
   let IsLoad = 1;
   let IsNonExtLoad = 1;
+}
+
+def atomic_load_8_glue : PatFrag<(ops node:$ptr),
+  (AMDGPUatomic_ld_glue node:$ptr)> {
+  let IsAtomic = 1;
+  let MemoryVT = i8;
+}
+
+def atomic_load_16_glue : PatFrag<(ops node:$ptr),
+  (AMDGPUatomic_ld_glue node:$ptr)> {
+  let IsAtomic = 1;
+  let MemoryVT = i16;
 }
 
 def atomic_load_32_glue : PatFrag<(ops node:$ptr),
@@ -423,6 +434,14 @@ def load_align16_local_m0 : PatFrag<(ops node:$ptr),
 } // End IsLoad = 1
 
 let IsAtomic = 1, AddressSpaces = LoadAddress_local.AddrSpaces in {
+def atomic_load_8_local_m0 : PatFrag<(ops node:$ptr),
+                                      (atomic_load_8_glue node:$ptr)> {
+  let MemoryVT = i8;
+}
+def atomic_load_16_local_m0 : PatFrag<(ops node:$ptr),
+                                      (atomic_load_16_glue node:$ptr)> {
+  let MemoryVT = i16;
+}
 def atomic_load_32_local_m0 : PatFrag<(ops node:$ptr),
                                       (atomic_load_32_glue node:$ptr)> {
   let MemoryVT = i32;
@@ -509,6 +528,18 @@ def store_align16_local_m0 : PatFrag <(ops node:$value, node:$ptr),
 
 let AddressSpaces = StoreAddress_local.AddrSpaces in {
 
+def atomic_store_local_8_m0 : PatFrag <
+  (ops node:$value, node:$ptr),
+  (AMDGPUatomic_st_glue node:$value, node:$ptr)> {
+  let IsAtomic = 1;
+  let MemoryVT = i8;
+}
+def atomic_store_local_16_m0 : PatFrag <
+  (ops node:$value, node:$ptr),
+  (AMDGPUatomic_st_glue node:$value, node:$ptr)> {
+  let IsAtomic = 1;
+  let MemoryVT = i16;
+}
 def atomic_store_local_32_m0 : PatFrag <
   (ops node:$value, node:$ptr),
   (AMDGPUatomic_st_glue node:$value, node:$ptr)> {
@@ -654,10 +685,14 @@ multiclass SIAtomicM0Glue2 <string op_name, bit is_amdgpu = 0,
 
   let AddressSpaces = StoreAddress_local.AddrSpaces in {
     defm _local_m0 : binary_atomic_op <!cast<SDNode>(NAME#"_glue"), IsInt>;
+    defm _local_m0 : ret_noret_binary_atomic_op <!cast<SDNode>(NAME#"_glue"),
+                                                 IsInt>;
   }
 
   let AddressSpaces = StoreAddress_region.AddrSpaces in {
     defm _region_m0 : binary_atomic_op <!cast<SDNode>(NAME#"_glue"), IsInt>;
+    defm _region_m0 : ret_noret_binary_atomic_op <!cast<SDNode>(NAME#"_glue"),
+                                                  IsInt>;
   }
 }
 
@@ -1173,6 +1208,7 @@ class kimmOperand<ValueType vt> : Operand<vt> {
   let OperandType = "OPERAND_KIMM"#vt.Size;
   let PrintMethod = "printU"#vt.Size#"ImmOperand";
   let ParserMatchClass = !cast<AsmOperandClass>("KImmFP"#vt.Size#"MatchClass");
+  let DecoderMethod = "decodeOperand_f"#vt.Size#"kimm";
 }
 
 // 32-bit VALU immediate operand that uses the constant bus.
@@ -1317,11 +1353,11 @@ def PackedI16InputMods : PackedIntInputMods<PackedI16InputModsMatchClass>;
 // Complex patterns
 //===----------------------------------------------------------------------===//
 
-def DS1Addr1Offset : ComplexPattern<i32, 2, "SelectDS1Addr1Offset">;
-def DS64Bit4ByteAligned : ComplexPattern<i32, 3, "SelectDS64Bit4ByteAligned">;
-def DS128Bit8ByteAligned : ComplexPattern<i64, 3, "SelectDS128Bit8ByteAligned">;
+def DS1Addr1Offset : ComplexPattern<iPTR, 2, "SelectDS1Addr1Offset">;
+def DS64Bit4ByteAligned : ComplexPattern<iPTR, 3, "SelectDS64Bit4ByteAligned">;
+def DS128Bit8ByteAligned : ComplexPattern<iPTR, 3, "SelectDS128Bit8ByteAligned">;
 
-def MOVRELOffset : ComplexPattern<i32, 2, "SelectMOVRELOffset">;
+def MOVRELOffset : ComplexPattern<iPTR, 2, "SelectMOVRELOffset">;
 
 def VOP3Mods0 : ComplexPattern<untyped, 4, "SelectVOP3Mods0">;
 def VOP3Mods  : ComplexPattern<untyped, 2, "SelectVOP3Mods">;
@@ -1930,7 +1966,7 @@ class getAsmDPP8 <bit HasDst, int NumSrcArgs, bit HasModifiers, ValueType DstVT 
 class getAsmSDWA <bit HasDst, int NumSrcArgs, ValueType DstVT = i32> {
   string dst = !if(HasDst,
                    !if(!eq(DstVT.Size, 1),
-                       " vcc", // use vcc token as dst for VOPC instructioins
+                       " vcc", // use vcc token as dst for VOPC instructions
                        "$vdst"),
                     "");
   string src0 = "$src0_modifiers";
@@ -2213,7 +2249,7 @@ class VOP_NO_EXT <VOPProfile p> : VOPProfile <p.ArgVT> {
   let HasExtSDWA9 = 0;
 }
 
-class VOP_PAT_GEN <VOPProfile p, int mode=PatGenMode.Pattern> : VOPProfile <p.ArgVT> {
+class VOP_PAT_GEN <VOPProfile p, int mode=PatGenMode.NoPattern> : VOPProfile <p.ArgVT> {
   let NeedPatGen = mode;
 }
 
@@ -2553,6 +2589,14 @@ def getFlatScratchInstSVfromSS : InstrMapping {
   let ColFields = ["Mode"];
   let KeyCol = ["SS"];
   let ValueCols = [["SV"]];
+}
+
+def getMFMAEarlyClobberOp : InstrMapping {
+  let FilterClass = "MFMATable";
+  let RowFields = ["FMAOp"];
+  let ColFields = ["IsMac"];
+  let KeyCol = ["1"];
+  let ValueCols = [["0"]];
 }
 
 include "SIInstructions.td"

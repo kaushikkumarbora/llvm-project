@@ -176,7 +176,13 @@ public:
 
   repro::DataRecorder *GetInputRecorder();
 
-  void SetInputFile(lldb::FileSP file, repro::DataRecorder *recorder = nullptr);
+  Status SetInputString(const char *data);
+
+  // This method will setup data recorder if reproducer enabled.
+  // On reply mode this method should take instructions from reproducer file.
+  Status SetInputFile(lldb::FileSP file);
+
+  void SetInputFile(lldb::FileSP file, repro::DataRecorder *recorder);
 
   void SetOutputFile(lldb::FileSP file);
 
@@ -299,6 +305,10 @@ public:
   lldb::ScriptLanguage GetScriptLanguage() const;
 
   bool SetScriptLanguage(lldb::ScriptLanguage script_lang);
+
+  lldb::LanguageType GetREPLLanguage() const;
+
+  bool SetREPLLanguage(lldb::LanguageType repl_lang);
 
   uint32_t GetTerminalWidth() const;
 
@@ -429,8 +439,6 @@ protected:
 
   void StopEventHandlerThread();
 
-  static lldb::thread_result_t EventHandlerThread(lldb::thread_arg_t arg);
-
   void PushIOHandler(const lldb::IOHandlerSP &reader_sp,
                      bool cancel_top_handler = true);
 
@@ -444,9 +452,9 @@ protected:
 
   void JoinIOHandlerThread();
 
-  static lldb::thread_result_t IOHandlerThread(lldb::thread_arg_t arg);
+  lldb::thread_result_t IOHandlerThread();
 
-  void DefaultEventHandler();
+  lldb::thread_result_t DefaultEventHandler();
 
   void HandleBreakpointEvent(const lldb::EventSP &event_sp);
 

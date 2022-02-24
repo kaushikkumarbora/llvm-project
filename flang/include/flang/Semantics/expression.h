@@ -247,6 +247,9 @@ public:
   const Assignment *Analyze(const parser::AssignmentStmt &);
   const Assignment *Analyze(const parser::PointerAssignmentStmt &);
 
+  // Builds a typed Designator from an untyped DataRef
+  MaybeExpr Designate(DataRef &&);
+
 protected:
   int IntegerTypeSpecKind(const parser::IntegerTypeSpec &);
 
@@ -317,7 +320,8 @@ private:
       const parser::SectionSubscript &);
   std::vector<Subscript> AnalyzeSectionSubscripts(
       const std::list<parser::SectionSubscript> &);
-  MaybeExpr Designate(DataRef &&);
+  std::optional<Component> CreateComponent(
+      DataRef &&, const Symbol &, const semantics::Scope &);
   MaybeExpr CompleteSubscripts(ArrayRef &&);
   MaybeExpr ApplySubscripts(DataRef &&, std::vector<Subscript> &&);
   MaybeExpr TopLevelChecks(DataRef &&);
@@ -340,9 +344,10 @@ private:
   using AdjustActuals =
       std::optional<std::function<bool(const Symbol &, ActualArguments &)>>;
   bool ResolveForward(const Symbol &);
-  const Symbol *ResolveGeneric(const Symbol &, const ActualArguments &,
-      const AdjustActuals &, bool mightBeStructureConstructor = false);
-  void EmitGenericResolutionError(const Symbol &);
+  std::pair<const Symbol *, bool /* failure due to NULL() actuals */>
+  ResolveGeneric(const Symbol &, const ActualArguments &, const AdjustActuals &,
+      bool mightBeStructureConstructor = false);
+  void EmitGenericResolutionError(const Symbol &, bool dueToNullActuals);
   const Symbol &AccessSpecific(
       const Symbol &originalGeneric, const Symbol &specific);
   std::optional<CalleeAndArguments> GetCalleeAndArguments(const parser::Name &,
@@ -369,6 +374,7 @@ private:
   bool isWholeAssumedSizeArrayOk_{false};
   bool useSavedTypedExprs_{true};
   bool inWhereBody_{false};
+  bool inDataStmtConstant_{false};
   friend class ArgumentAnalyzer;
 };
 

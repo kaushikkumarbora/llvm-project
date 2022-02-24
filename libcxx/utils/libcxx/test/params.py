@@ -8,6 +8,7 @@
 
 from libcxx.test.dsl import *
 from libcxx.test.features import _isMSVC
+import re
 
 _warningFlags = [
   '-Werror',
@@ -59,6 +60,7 @@ DEFAULT_PARAMETERS = [
             actions=lambda triple: filter(None, [
               AddFeature('target={}'.format(triple)),
               AddFlagIfSupported('--target={}'.format(triple)),
+              AddSubstitution('%{triple}', triple)
             ])),
 
   Parameter(name='std', choices=_allStandards, type=str,
@@ -74,7 +76,7 @@ DEFAULT_PARAMETERS = [
             actions=lambda modules: [
               AddFeature('modules-build'),
               AddCompileFlag('-fmodules'),
-              AddCompileFlag('-Xclang -fmodules-local-submodule-visibility'),
+              AddCompileFlag('-fcxx-modules'), # AppleClang disregards -fmodules entirely when compiling C++. This enables modules for C++.
             ] if modules else []),
 
   Parameter(name='enable_exceptions', choices=[True, False], type=bool, default=True,
@@ -106,9 +108,12 @@ DEFAULT_PARAMETERS = [
                  - libstdc++: The GNU C++ library typically shipped with GCC.
                  - msvc: The Microsoft implementation of the C++ Standard Library.
                 """,
-            actions=lambda stdlib: [
-              AddFeature('stdlib={}'.format(stdlib))
-            ]),
+            actions=lambda stdlib: filter(None, [
+              AddFeature('stdlib={}'.format(stdlib)),
+              # Also add an umbrella feature 'stdlib=libc++' for all flavors of libc++, to simplify
+              # the test suite.
+              AddFeature('stdlib=libc++') if re.match('.+-libc\+\+', stdlib) else None
+            ])),
 
   Parameter(name='enable_warnings', choices=[True, False], type=bool, default=True,
             help="Whether to enable warnings when compiling the test suite.",
@@ -118,10 +123,11 @@ DEFAULT_PARAMETERS = [
 
   Parameter(name='debug_level', choices=['', '0', '1'], type=str, default='',
             help="The debugging level to enable in the test suite.",
-            actions=lambda debugLevel: [] if debugLevel == '' else [
+            actions=lambda debugLevel: [] if debugLevel == '' else filter(None, [
               AddFeature('debug_level={}'.format(debugLevel)),
-              AddCompileFlag('-D_LIBCPP_DEBUG={}'.format(debugLevel))
-            ]),
+              AddCompileFlag('-D_LIBCPP_DEBUG={}'.format(debugLevel)),
+              AddFeature('LIBCXX-DEBUG-FIXME') if debugLevel == '1' else None
+            ])),
 
   Parameter(name='use_sanitizer', choices=['', 'Address', 'Undefined', 'Memory', 'MemoryWithOrigins', 'Thread', 'DataFlow', 'Leaks'], type=str, default='',
             help="An optional sanitizer to enable when building and running the test suite.",
@@ -169,13 +175,6 @@ DEFAULT_PARAMETERS = [
             help="Whether to enable tests that exercise the libc++ debugging mode.",
             actions=lambda enabled: [] if enabled else [
               AddFeature('libcxx-no-debug-mode')
-            ]),
-
-  Parameter(name='enable_32bit', choices=[True, False], type=bool, default=False,
-            help="Whether to build the test suite in 32 bit mode even on a 64 bit target. This basically controls "
-                 "whether -m32 is used when building the test suite.",
-            actions=lambda enabled: [] if not enabled else [
-              AddFlag('-m32')
             ]),
 
   Parameter(name='additional_features', type=list, default=[],

@@ -6,11 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-def MUBUFAddr64 : ComplexPattern<i64, 4, "SelectMUBUFAddr64">;
-def MUBUFOffset : ComplexPattern<i64, 3, "SelectMUBUFOffset">;
+def MUBUFAddr64 : ComplexPattern<iPTR, 4, "SelectMUBUFAddr64">;
+def MUBUFOffset : ComplexPattern<iPTR, 3, "SelectMUBUFOffset">;
 
-def MUBUFScratchOffen : ComplexPattern<i64, 4, "SelectMUBUFScratchOffen", [], [SDNPWantParent]>;
-def MUBUFScratchOffset : ComplexPattern<i64, 3, "SelectMUBUFScratchOffset", [], [SDNPWantParent], 20>;
+def MUBUFScratchOffen : ComplexPattern<iPTR, 4, "SelectMUBUFScratchOffen", [], [SDNPWantParent]>;
+def MUBUFScratchOffset : ComplexPattern<iPTR, 3, "SelectMUBUFScratchOffset", [], [SDNPWantParent], 20>;
 
 def BUFAddrKind {
   int Offset = 0;
@@ -136,7 +136,7 @@ class MTBUF_Real <MTBUF_Pseudo ps> :
   bits<3> nfmt = format{6-4};
 
   // GFX90A+ only: instruction uses AccVGPR for data
-  // Bit superceedes tfe.
+  // Bit supersedes tfe.
   bits<1> acc = !if(ps.has_vdata, vdata{9}, 0);
 }
 
@@ -370,7 +370,7 @@ class MUBUF_Real <MUBUF_Pseudo ps> :
   bits<8>  soffset;
 
   // GFX90A+ only: instruction uses AccVGPR for data
-  // Bit superceedes tfe.
+  // Bit supersedes tfe.
   bits<1> acc = !if(ps.has_vdata, vdata{9}, 0);
 }
 
